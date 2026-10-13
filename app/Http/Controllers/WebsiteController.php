@@ -18,7 +18,7 @@ class WebsiteController extends Controller
         $categories = Category::whereNull('parent_id')->where('status', true)
             ->withCount('products')
             ->with(['products' => fn ($q) => $q->where('status', true)->whereNotNull('image_path')->limit(1)])
-            ->having('products_count', '>', 0)
+            ->whereHas('products')
             ->orderBy('name')
             ->get();
 
