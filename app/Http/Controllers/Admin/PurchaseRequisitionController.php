@@ -118,7 +118,7 @@ class PurchaseRequisitionController extends Controller implements HasMiddleware
     public function show(PurchaseRequisition $purchaseRequisition)
     {
         $purchaseRequisition->load([
-            'proformaInvoice.party', 'site', 'requestedBy', 'approvedBy',
+            'proformaInvoice.party', 'site', 'requestedBy', 'approvedBy', 'purchase',
             'items.product.stockUnit', 'items.productVariant.attributeValues',
         ]);
 

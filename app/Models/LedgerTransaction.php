@@ -26,6 +26,7 @@ class LedgerTransaction extends Model
         'journal',
         'salary',
         'internal_consumption',
+        'purchase',
     ];
 
     /**
@@ -43,6 +44,7 @@ class LedgerTransaction extends Model
         'journal' => 'JNL',
         'salary' => 'SLR',
         'internal_consumption' => 'ICN',
+        'purchase' => 'PUR',
     ];
 
     /**
@@ -61,6 +63,7 @@ class LedgerTransaction extends Model
         'journal' => 'Journal',
         'salary' => 'Salary Payment',
         'internal_consumption' => 'Internal Consumption',
+        'purchase' => 'Purchase',
     ];
 
     protected $fillable = [
@@ -120,6 +123,7 @@ class LedgerTransaction extends Model
             \App\Models\CapitalTransaction::class => route('capital-transactions.show', $this->reference_id),
             \App\Models\Party::class => route('parties.ledger', $this->reference_id),
             \App\Models\StockMovement::class => route('products.history', $this->reference->product_id),
+            \App\Models\PurchaseReceipt::class => route('purchases.show', $this->reference->purchase_id),
             default => null,
         };
     }

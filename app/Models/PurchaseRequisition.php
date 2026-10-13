@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PurchaseRequisition extends Model
 {
@@ -77,6 +78,14 @@ class PurchaseRequisition extends Model
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+     * The live (non-cancelled) Purchase Order raised from this requisition.
+     */
+    public function purchase(): HasOne
+    {
+        return $this->hasOne(Purchase::class)->where('status', '!=', 'cancelled')->latestOfMany();
     }
 
     public function isEditable(): bool

@@ -123,6 +123,11 @@ class ProformaInvoice extends Model
         return $this->hasMany(PurchaseRequisition::class);
     }
 
+    public function purchases(): HasMany
+    {
+        return $this->hasMany(Purchase::class);
+    }
+
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
         return $user->seesOnlyOwnSales()

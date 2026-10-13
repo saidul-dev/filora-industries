@@ -84,6 +84,21 @@
             </button>
             @endif
 
+            @if ($requisition->status === 'approved' && $user->can('purchases.create'))
+            <a href="{{ route('purchases.create', ['from_requisition' => $requisition->id]) }}"
+               class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 0 0-16.536-1.84M7.5 14.25 5.106 5.272"/></svg>
+                {{ __('Create Purchase Order') }}
+            </a>
+            @endif
+
+            @if ($requisition->purchase && $user->can('purchases.view'))
+            <a href="{{ route('purchases.show', $requisition->purchase) }}"
+               class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+                {{ __('View :no', ['no' => $requisition->purchase->purchase_no]) }}
+            </a>
+            @endif
+
             @if ($requisition->isEditable() && $user->can('requisitions.delete'))
             <form method="POST" action="{{ route('purchase-requisitions.destroy', $requisition) }}" class="ml-auto"
                   onsubmit="return confirm('{{ __('Delete :no?', ['no' => $requisition->requisition_no]) }}');">

@@ -144,7 +144,7 @@
                     @endcan
 
                     @canany(['requisitions.view', 'purchases.view'])
-                    <x-sidebar-dropdown :title="__('Procurement')" :active="request()->routeIs('purchase-requisitions.*')">
+                    <x-sidebar-dropdown :title="__('Procurement')" :active="request()->routeIs('purchase-requisitions.*', 'purchases.*')">
                         <x-slot name="icon">
                             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8"
                                 stroke="currentColor">
@@ -156,6 +156,11 @@
                         @can('requisitions.view')
                         <x-sidebar-sublink :href="route('purchase-requisitions.index')" :active="request()->routeIs('purchase-requisitions.*')">
                             {{ __('Requisitions') }}
+                        </x-sidebar-sublink>
+                        @endcan
+                        @can('purchases.view')
+                        <x-sidebar-sublink :href="route('purchases.index')" :active="request()->routeIs('purchases.*')">
+                            {{ __('Purchase Orders') }}
                         </x-sidebar-sublink>
                         @endcan
                     </x-sidebar-dropdown>
