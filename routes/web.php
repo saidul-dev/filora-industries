@@ -29,6 +29,7 @@ use App\Http\Controllers\Admin\PayrollRunController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ProfitLossController;
 use App\Http\Controllers\Admin\ProformaInvoiceController;
+use App\Http\Controllers\Admin\PurchaseRequisitionController;
 use App\Http\Controllers\Admin\ProjectController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SalaryStructureController;
@@ -111,6 +112,11 @@ Route::prefix('admin')->group(function () {
         Route::post('/proforma-invoices/{proformaInvoice}/close', [ProformaInvoiceController::class, 'close'])->name('proforma-invoices.close');
         Route::post('/proforma-invoices/{proformaInvoice}/cancel', [ProformaInvoiceController::class, 'cancel'])->name('proforma-invoices.cancel');
         Route::get('/proforma-invoices/{proformaInvoice}/print', [ProformaInvoiceController::class, 'print'])->name('proforma-invoices.print');
+
+        Route::resource('purchase-requisitions', PurchaseRequisitionController::class)
+            ->parameters(['purchase-requisitions' => 'purchaseRequisition']);
+        Route::post('/purchase-requisitions/{purchaseRequisition}/approve', [PurchaseRequisitionController::class, 'approve'])->name('purchase-requisitions.approve');
+        Route::post('/purchase-requisitions/{purchaseRequisition}/reject', [PurchaseRequisitionController::class, 'reject'])->name('purchase-requisitions.reject');
 
         // Production — Bill of Materials per Manufactured product (see
         // docs/order-to-delivery.md).

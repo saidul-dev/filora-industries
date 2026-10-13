@@ -327,4 +327,46 @@
         </div>
     </div>
     @endif
+
+    <!-- Procurement: requisitions raised under this PI -->
+    @can('requisitions.view')
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-6 pt-5 pb-3">
+            <div>
+                <h3 class="font-bold text-brand-900">{{ __('Inventory Requisitions') }}</h3>
+                <p class="text-xs text-slate-400">{{ __('Finished goods and raw materials requested for this PI.') }}</p>
+            </div>
+            @if ($invoice->isActive() && $user->can('requisitions.create'))
+            <a href="{{ route('purchase-requisitions.create', ['proforma_invoice_id' => $invoice->id]) }}"
+               class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                {{ __('Raise Requisition') }}
+            </a>
+            @endif
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full min-w-[640px] text-sm">
+            <tbody class="divide-y divide-slate-100 border-t border-slate-100">
+                @forelse ($invoice->requisitions as $requisition)
+                <tr class="hover:bg-slate-50">
+                    <td class="px-5 py-3">
+                        <a href="{{ route('purchase-requisitions.show', $requisition) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $requisition->requisition_no }}</a>
+                        <span class="block text-xs text-slate-400">{{ $requisition->request_date->format('d M, Y') }}</span>
+                    </td>
+                    <td class="px-5 py-3 text-slate-600">{{ $requisition->site->name }}</td>
+                    <td class="px-5 py-3 text-slate-600">{{ trans_choice(':count item|:count items', $requisition->items_count, ['count' => $requisition->items_count]) }}</td>
+                    <td class="px-5 py-3 text-right">
+                        <x-status-badge :label="$requisition->status_label" :color="\App\Models\PurchaseRequisition::STATUS_COLORS[$requisition->status] ?? 'slate'" />
+                    </td>
+                </tr>
+                @empty
+                <tr>
+                    <td class="px-5 py-6 text-center text-slate-400">{{ __('No requisitions raised under this PI yet.') }}</td>
+                </tr>
+                @endforelse
+            </tbody>
+        </table>
+        </div>
+    </div>
+    @endcan
 </x-app-layout>
