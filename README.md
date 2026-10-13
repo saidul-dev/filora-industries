@@ -29,6 +29,17 @@ Payment-gateway/Steadfast integrations.** Sections 1–8 below describe the
 as historical context for the modules that remain, not as a live spec for
 this branch.
 
+### Filora Industries — Package A (Core Operations)
+
+On top of that base, this codebase now carries the Package A order-to-delivery
+cycle for Filora Industries Ltd. (garments accessories manufacturer):
+**Sales Orders → Proforma Invoices (with LC) → Inventory Requisitions →
+Purchase Orders & Goods Receipt → BOM & Production Orders → Deliveries →
+Collections**, with Sales Person / Accounts / Factory Manager roles, product
+types (manufactured / direct purchase / raw material), Factory/Office
+stock by location and every step posted to stock and Accounts. See
+[docs/order-to-delivery.md](docs/order-to-delivery.md).
+
 ---
 
 ## 1. Product Vision & Positioning

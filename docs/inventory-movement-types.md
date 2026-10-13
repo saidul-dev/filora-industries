@@ -15,6 +15,7 @@ ledger entry at the destination.
 | Transfer receive | Destination leg of a site-to-site transfer |
 | Adjustment addition | Stock count correction — found extra stock |
 | Sales Return | Customer returns previously sold goods |
+| Production return | Raw materials put back when a Production Order is cancelled before completion — posted without a unit cost so the average cost is untouched |
 
 ## OUT (decreases stock)
 
@@ -29,9 +30,16 @@ ledger entry at the destination.
 | Sample/Free issue | Given away for marketing/promotion, not a sale |
 | Internal consumption | Used internally (e.g. office/self-use), not a sale |
 
+## Where each type is posted
+
+See [order-to-delivery.md](order-to-delivery.md) for the Package A flow:
+`purchase` by Goods Receipts (`PurchaseReceipt`), `production_consumption` /
+`production` / `production_return` by Production Orders (`ProductionOrder`)
+— the consumption and the output are separate movements under the same
+order, posted at issue and at completion respectively — and `sale` by
+Delivery Challans (`Delivery`).
+
 ## Open questions for implementation
 
-- Should Production consumption/output be modeled as two linked movements
-  (raw material OUT + finished goods IN) under one production transaction?
 - Batch/serial/expiry tracking (`track_batch`, `track_expiry`, `track_serial`
   on Product) — do movement records need to carry batch/serial/expiry data?
