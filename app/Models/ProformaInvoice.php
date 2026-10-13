@@ -138,6 +138,24 @@ class ProformaInvoice extends Model
         return $this->hasMany(Delivery::class);
     }
 
+    /**
+     * Customer payments collected against this PI (Accounts > Collections).
+     */
+    public function collections(): HasMany
+    {
+        return $this->hasMany(Collection::class);
+    }
+
+    public function collectedAmount(): float
+    {
+        return (float) $this->collections()->sum('amount');
+    }
+
+    public function dueAmount(): float
+    {
+        return round((float) $this->total_amount - $this->collectedAmount(), 2);
+    }
+
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
         return $user->seesOnlyOwnSales()

@@ -45,7 +45,10 @@
                 @forelse ($collections as $collection)
                 <tr class="hover:bg-slate-50">
                     <td class="px-5 py-3 font-semibold text-slate-800">{{ $collection->collection_no }}</td>
-                    <td class="px-5 py-3 text-slate-600">{{ $collection->party->name }}</td>
+                    <td class="px-5 py-3 text-slate-600">
+                        {{ $collection->party->name }}
+                        @if ($collection->proformaInvoice)<span class="block text-xs text-slate-400">{{ __('Against') }} {{ $collection->proformaInvoice->pi_no }}</span>@endif
+                    </td>
                     <td class="px-5 py-3 text-slate-600">{{ $collection->account->name }}</td>
                     <td class="px-5 py-3 text-slate-600">{{ $collection->collection_date->format('d M, Y') }}</td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ number_format($collection->amount, 2) }}</td>

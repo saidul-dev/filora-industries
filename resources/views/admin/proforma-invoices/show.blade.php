@@ -230,6 +230,72 @@
     </div>
     @endif
 
+    <!-- Payment / collection against this PI -->
+    @if (! in_array($invoice->status, ['draft', 'cancelled'], true))
+    @php
+        $collected = (float) $invoice->collections->sum('amount');
+        $deliveredValue = (float) $invoice->deliveries->sum('sale_amount');
+        $due = round((float) $invoice->total_amount - $collected, 2);
+    @endphp
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6 mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h3 class="font-bold text-brand-900">{{ __('Payment') }}</h3>
+                <p class="text-xs text-slate-400">{{ __('Customer payments collected against this PI are recorded as income in Accounts.') }}</p>
+            </div>
+            @can('accounts.create')
+            <a href="{{ route('collections.create', ['proforma_invoice_id' => $invoice->id]) }}"
+               class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                {{ __('Record Collection') }}
+            </a>
+            @endcan
+        </div>
+
+        <div class="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100">
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('PI Total') }}</span>
+                <span class="mt-1 block text-lg font-bold text-slate-800">{{ number_format($invoice->total_amount, 2) }}</span>
+            </div>
+            <div class="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100">
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Delivered Value') }}</span>
+                <span class="mt-1 block text-lg font-bold text-slate-800">{{ number_format($deliveredValue, 2) }}</span>
+            </div>
+            <div class="rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-600">{{ __('Collected') }}</span>
+                <span class="mt-1 block text-lg font-bold text-emerald-700">{{ number_format($collected, 2) }}</span>
+            </div>
+            <div class="rounded-xl p-4 ring-1 {{ $due > 0 ? 'bg-amber-50 ring-amber-100' : 'bg-slate-50 ring-slate-100' }}">
+                <span class="block text-[11px] font-semibold uppercase tracking-wide {{ $due > 0 ? 'text-amber-600' : 'text-slate-400' }}">{{ $due >= 0 ? __('Due') : __('Advance') }}</span>
+                <span class="mt-1 block text-lg font-bold {{ $due > 0 ? 'text-amber-700' : 'text-slate-800' }}">{{ number_format(abs($due), 2) }}</span>
+            </div>
+        </div>
+
+        @if ($invoice->collections->isNotEmpty())
+        <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[560px] text-sm">
+            <tbody class="divide-y divide-slate-100 border-t border-slate-100">
+                @foreach ($invoice->collections as $collection)
+                <tr class="hover:bg-slate-50">
+                    <td class="px-3 py-2">
+                        @can('accounts.view')
+                        <a href="{{ route('collections.show', $collection) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $collection->collection_no }}</a>
+                        @else
+                        <span class="font-semibold text-slate-800">{{ $collection->collection_no }}</span>
+                        @endcan
+                    </td>
+                    <td class="px-3 py-2 text-slate-600">{{ $collection->collection_date->format('d M, Y') }}</td>
+                    <td class="px-3 py-2 text-slate-600">{{ $collection->account->name }}{{ $collection->reference_no ? ' · '.$collection->reference_no : '' }}</td>
+                    <td class="px-3 py-2 text-right font-semibold text-emerald-700">{{ number_format($collection->amount, 2) }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+        </div>
+        @endif
+    </div>
+    @endif
+
     <!-- Final deliverable items -->
     <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden mb-4">
         <div class="px-6 pt-5 pb-3">

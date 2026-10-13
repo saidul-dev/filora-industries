@@ -7,6 +7,7 @@ use App\Models\Collection;
 use App\Models\CompanySetting;
 use App\Models\LedgerAccount;
 use App\Models\Party;
+use App\Models\ProformaInvoice;
 use App\Models\Project;
 use App\Services\LedgerService;
 use Illuminate\Http\Request;
@@ -35,7 +36,7 @@ class CollectionController extends Controller implements HasMiddleware
     {
         $partyId = $request->filled('party_id') ? $request->integer('party_id') : null;
 
-        $collections = Collection::with(['party', 'account'])
+        $collections = Collection::with(['party', 'account', 'proformaInvoice'])
             ->when($partyId, fn ($q) => $q->where('party_id', $partyId))
             ->orderByDesc('collection_date')
             ->orderByDesc('id')
@@ -58,10 +59,23 @@ class CollectionController extends Controller implements HasMiddleware
         $customers = Party::where('is_customer', true)->where('status', true)->orderBy('name')->get(['id', 'name']);
         $accounts = LedgerAccount::where('group', 'cash_bank')->where('status', true)->orderBy('name')->get(['id', 'name']);
 
-        $party = $request->filled('party_id') ? Party::findOrFail($request->integer('party_id')) : null;
+        $selectedInvoice = $request->filled('proforma_invoice_id')
+            ? ProformaInvoice::whereNotIn('status', ['draft', 'cancelled'])->find($request->integer('proforma_invoice_id'))
+            : null;
+
+        $party = $request->filled('party_id')
+            ? Party::findOrFail($request->integer('party_id'))
+            : $selectedInvoice?->party;
         $receivable = $party?->receivableBalance();
 
-        return view('admin.collections.create', compact('customers', 'accounts', 'party', 'receivable'));
+        // The buyer's issued PIs, so a payment (LC proceeds, advance,
+        // balance) can be recorded against the one it settles.
+        $invoices = $party
+            ? ProformaInvoice::where('party_id', $party->id)->whereNotIn('status', ['draft', 'cancelled'])->orderByDesc('id')->get()
+                ->map(fn ($pi) => (object) ['id' => $pi->id, 'name' => $pi->pi_no.' — '.__('due').' '.number_format($pi->dueAmount(), 2)])
+            : collect();
+
+        return view('admin.collections.create', compact('customers', 'accounts', 'party', 'receivable', 'invoices', 'selectedInvoice'));
     }
 
     public function store(Request $request)
@@ -69,6 +83,7 @@ class CollectionController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'party_id' => ['required', 'integer', 'exists:parties,id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'proforma_invoice_id' => ['nullable', 'integer', 'exists:proforma_invoices,id'],
             'ledger_account_id' => ['required', 'integer', 'exists:ledger_accounts,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'collection_date' => ['required', 'date'],
@@ -89,13 +104,25 @@ class CollectionController extends Controller implements HasMiddleware
             }
         }
 
+        $invoice = null;
+        if (! empty($validated['proforma_invoice_id'])) {
+            $invoice = ProformaInvoice::findOrFail($validated['proforma_invoice_id']);
+            if ($invoice->party_id !== $party->id) {
+                throw ValidationException::withMessages(['proforma_invoice_id' => 'This Proforma Invoice does not belong to the selected customer.']);
+            }
+            if (in_array($invoice->status, ['draft', 'cancelled'], true)) {
+                throw ValidationException::withMessages(['proforma_invoice_id' => 'Payments can only be collected against an issued Proforma Invoice.']);
+            }
+        }
+
         $account = LedgerAccount::where('group', 'cash_bank')->findOrFail($validated['ledger_account_id']);
 
-        $collection = DB::transaction(function () use ($validated, $party, $project, $account) {
+        $collection = DB::transaction(function () use ($validated, $party, $project, $invoice, $account) {
             $collection = Collection::create([
                 'collection_no' => 'PENDING',
                 'party_id' => $party->id,
                 'project_id' => $project?->id,
+                'proforma_invoice_id' => $invoice?->id,
                 'ledger_account_id' => $account->id,
                 'amount' => $validated['amount'],
                 'collection_date' => $validated['collection_date'],
@@ -114,7 +141,7 @@ class CollectionController extends Controller implements HasMiddleware
                 // so Day Book still shows something meaningful instead of
                 // a blank dash.
                 'site_id' => $account->site_id ?? $project?->site_id,
-                'narration' => "Collection from {$party->name} ({$collection->collection_no})",
+                'narration' => "Collection from {$party->name} ({$collection->collection_no})".($invoice ? " against {$invoice->pi_no}" : ''),
                 'reference' => $collection,
                 'created_by' => Auth::id(),
                 'lines' => [
@@ -126,14 +153,18 @@ class CollectionController extends Controller implements HasMiddleware
             return $collection;
         });
 
-        return $project
-            ? redirect()->route('projects.show', $project)->with('success', "Collection {$collection->collection_no} recorded.")
-            : redirect()->route('collections.show', $collection)->with('success', "Collection {$collection->collection_no} recorded.");
+        $message = "Collection {$collection->collection_no} recorded.";
+
+        return match (true) {
+            $project !== null => redirect()->route('projects.show', $project)->with('success', $message),
+            $invoice !== null && Auth::user()->can('sales.view') => redirect()->route('proforma-invoices.show', $invoice)->with('success', $message),
+            default => redirect()->route('collections.show', $collection)->with('success', $message),
+        };
     }
 
     public function show(Collection $collection)
     {
-        $collection->load(['party', 'account', 'creator', 'ledgerTransaction.lines.account']);
+        $collection->load(['party', 'account', 'creator', 'proformaInvoice', 'ledgerTransaction.lines.account']);
 
         return view('admin.collections.show', compact('collection'));
     }

@@ -7,6 +7,17 @@
         </div>
     </x-slot>
 
+    @if ($collection->proformaInvoice)
+    <div class="mb-4 flex items-center gap-2 rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-700 ring-1 ring-violet-200">
+        {{ __('Collected against Proforma Invoice') }}
+        @can('sales.view')
+        <a href="{{ route('proforma-invoices.show', $collection->proformaInvoice) }}" class="font-semibold underline">{{ $collection->proformaInvoice->pi_no }}</a>
+        @else
+        <span class="font-semibold">{{ $collection->proformaInvoice->pi_no }}</span>
+        @endcan
+    </div>
+    @endif
+
     @include('admin.vouchers._show', [
         'accent' => 'emerald',
         'stampLabel' => __('Received'),

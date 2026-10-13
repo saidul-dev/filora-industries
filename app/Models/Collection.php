@@ -12,6 +12,7 @@ class Collection extends Model
         'collection_no',
         'party_id',
         'project_id',
+        'proforma_invoice_id',
         'ledger_account_id',
         'amount',
         'collection_date',
@@ -33,6 +34,11 @@ class Collection extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function proformaInvoice(): BelongsTo
+    {
+        return $this->belongsTo(ProformaInvoice::class);
     }
 
     public function account(): BelongsTo

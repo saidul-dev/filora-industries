@@ -53,11 +53,23 @@
                         <x-input-error class="mt-2" :messages="$errors->get('ledger_account_id')" />
                     </div>
 
+                    @if ($invoices->isNotEmpty())
+                    <div>
+                        <x-input-label for="proforma_invoice_id" :value="__('Against Proforma Invoice (optional)')" />
+                        <div class="mt-1">
+                            <x-searchable-select name="proforma_invoice_id" :options="$invoices" :selected="old('proforma_invoice_id', $selectedInvoice?->id)"
+                                                  placeholder="{{ __('Not tied to a PI') }}" />
+                        </div>
+                        <p class="mt-1 text-[11px] text-slate-400">{{ __('LC proceeds, advances or balance payments for a specific PI.') }}</p>
+                        <x-input-error class="mt-2" :messages="$errors->get('proforma_invoice_id')" />
+                    </div>
+                    @endif
+
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <x-input-label for="amount" :value="__('Amount')" />
                             <x-text-input id="amount" name="amount" type="number" step="0.01" min="0.01" class="mt-1 block w-full"
-                                          :value="old('amount')" required />
+                                          :value="old('amount', $selectedInvoice && $selectedInvoice->dueAmount() > 0 ? $selectedInvoice->dueAmount() : null)" required />
                             <x-input-error class="mt-2" :messages="$errors->get('amount')" />
                         </div>
                         <div>

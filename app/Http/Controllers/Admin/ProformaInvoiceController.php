@@ -129,6 +129,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
             'productionOrders' => fn ($q) => $q->with(['product.stockUnit', 'productVariant.attributeValues', 'site'])->latest('id'),
             'items.productionOrders',
             'deliveries' => fn ($q) => $q->with('site')->withCount('items')->latest('id'),
+            'collections' => fn ($q) => $q->with('account')->latest('collection_date'),
         ]);
 
         $onHand = $proformaInvoice->items->mapWithKeys(fn ($item) => [
