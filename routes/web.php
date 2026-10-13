@@ -41,6 +41,7 @@ use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\SiteHealthController;
 use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\StockAdjustmentController;
+use App\Http\Controllers\Admin\StockLocationReportController;
 use App\Http\Controllers\Admin\StockReportController;
 use App\Http\Controllers\Admin\StockTransferController;
 use App\Http\Controllers\Admin\TaskController;
@@ -144,6 +145,7 @@ Route::prefix('admin')->group(function () {
         Route::get('/stock/initial-stock', [InitialStockController::class, 'index'])->name('stock.initial.index');
         Route::post('/stock/initial-stock', [InitialStockController::class, 'store'])->name('stock.initial.store');
         Route::get('/stock/report', [StockReportController::class, 'index'])->name('stock.report');
+        Route::get('/stock/locations', [StockLocationReportController::class, 'index'])->name('stock.locations');
         Route::get('/stock/adjustment', [StockAdjustmentController::class, 'index'])->name('stock.adjustment.index');
         Route::post('/stock/adjustment', [StockAdjustmentController::class, 'store'])->name('stock.adjustment.store');
         Route::get('/stock/internal-consumption', [InternalConsumptionController::class, 'index'])->name('stock.internal-consumption.index');
