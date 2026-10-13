@@ -8,6 +8,10 @@ use App\Models\Expense;
 use App\Models\LedgerAccount;
 use App\Models\Party;
 use App\Models\Product;
+use App\Models\ProductionOrder;
+use App\Models\ProformaInvoice;
+use App\Models\PurchaseRequisition;
+use App\Models\SalesOrder;
 use App\Models\StockMovement;
 use Illuminate\Support\Facades\Auth;
 
@@ -40,6 +44,8 @@ class DashboardController extends Controller
             ->take(6)
             ->values();
 
+        $pipeline = $this->orderPipeline();
+
         $recentCollections = CollectionModel::with('party')
             ->orderByDesc('collection_date')
             ->orderByDesc('id')
@@ -50,7 +56,7 @@ class DashboardController extends Controller
             'todayCollection', 'todayExpense', 'totalReceivable',
             'lowStockItems', 'lowStockCount', 'criticalCount',
             'chartLabels', 'collectionSeries', 'expenseSeries',
-            'topOverdueCustomers', 'recentCollections',
+            'topOverdueCustomers', 'recentCollections', 'pipeline',
         ));
     }
 
@@ -167,5 +173,82 @@ class DashboardController extends Controller
         }
 
         return [$labels, $collectionSeries, $expenseSeries];
+    }
+
+    /**
+     * Order-to-delivery pipeline (docs/order-to-delivery.md) — only the
+     * stages the user's permissions let them act on, each linking to its
+     * filtered list. Company-wide, like the documents themselves.
+     *
+     * @return array<int, array{label: string, value: int, url: string, alert: bool}>
+     */
+    protected function orderPipeline(): array
+    {
+        $user = Auth::user();
+        $tiles = [];
+
+        if ($user->can('sales.view')) {
+            $tiles[] = [
+                'label' => __('Sales Orders Pending'),
+                'value' => SalesOrder::visibleTo($user)->where('status', 'pending')->count(),
+                'url' => route('sales-orders.index', ['status' => 'pending']),
+                'alert' => false,
+            ];
+            $tiles[] = [
+                'label' => __('Open Proforma Invoices'),
+                'value' => ProformaInvoice::visibleTo($user)->active()->count(),
+                'url' => route('proforma-invoices.index'),
+                'alert' => false,
+            ];
+            $tiles[] = [
+                'label' => __('LCs Expiring in 15 Days'),
+                'value' => $expiring = ProformaInvoice::visibleTo($user)->active()
+                    ->whereBetween('lc_expiry_date', [today(), today()->addDays(15)])->count(),
+                'url' => route('proforma-invoices.index', ['status' => 'lc_issued']),
+                'alert' => $expiring > 0,
+            ];
+            $tiles[] = [
+                'label' => __('Ready for Delivery'),
+                'value' => ProformaInvoice::visibleTo($user)->where('status', 'ready')->count(),
+                'url' => route('proforma-invoices.index', ['status' => 'ready']),
+                'alert' => false,
+            ];
+        }
+
+        if ($user->can('requisitions.view')) {
+            $tiles[] = [
+                'label' => __('Requisitions Awaiting Approval'),
+                'value' => $pending = PurchaseRequisition::where('status', 'pending')->count(),
+                'url' => route('purchase-requisitions.index', ['status' => 'pending']),
+                'alert' => $pending > 0 && $user->can('requisitions.approve'),
+            ];
+        }
+
+        if ($user->can('purchases.view')) {
+            $tiles[] = [
+                'label' => __('Approved, Not Yet Ordered'),
+                'value' => PurchaseRequisition::where('status', 'approved')->count(),
+                'url' => route('purchase-requisitions.index', ['status' => 'approved']),
+                'alert' => false,
+            ];
+        }
+
+        if ($user->can('production.view')) {
+            $tiles[] = [
+                'label' => __('Production Running'),
+                'value' => ProductionOrder::whereIn('status', ['not_started', 'in_progress'])->count(),
+                'url' => route('production-orders.index', ['status' => 'in_progress']),
+                'alert' => false,
+            ];
+            $tiles[] = [
+                'label' => __('Production Overdue'),
+                'value' => $overdue = ProductionOrder::whereIn('status', ['not_started', 'in_progress'])
+                    ->whereDate('due_date', '<', today())->count(),
+                'url' => route('production-orders.index'),
+                'alert' => $overdue > 0,
+            ];
+        }
+
+        return $tiles;
     }
 }

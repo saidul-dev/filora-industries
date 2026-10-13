@@ -67,6 +67,25 @@
             @endforeach
         </div>
 
+        @if (! empty($pipeline))
+        <!-- Order-to-delivery pipeline -->
+        <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <div class="mb-4">
+                <h3 class="font-bold text-brand-900">{{ __('Order-to-Delivery Pipeline') }}</h3>
+                <p class="text-xs text-slate-400">{{ __('Sales Order → Proforma Invoice → Procurement / Production → Delivery') }}</p>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                @foreach ($pipeline as $tile)
+                <a href="{{ $tile['url'] }}"
+                   class="rounded-xl p-4 ring-1 transition hover:ring-accent-400 {{ $tile['alert'] ? 'bg-rose-50 ring-rose-200' : 'bg-slate-50 ring-slate-100' }}">
+                    <span class="block text-[11px] font-semibold uppercase tracking-wide {{ $tile['alert'] ? 'text-rose-500' : 'text-slate-400' }}">{{ $tile['label'] }}</span>
+                    <span class="mt-1 block text-2xl font-bold {{ $tile['alert'] ? 'text-rose-600' : 'text-brand-900' }}">{{ $tile['value'] }}</span>
+                </a>
+                @endforeach
+            </div>
+        </div>
+        @endif
+
         <!-- Charts row -->
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
             <div class="xl:col-span-2 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
