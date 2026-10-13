@@ -54,6 +54,16 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Head Accountant', 'password' => 'password']
         )->syncRoles('Accountant');
 
+        User::firstOrCreate(
+            ['email' => 'sales@businesserp.test'],
+            ['name' => 'Sales Executive', 'password' => 'password']
+        )->syncRoles('Sales Person');
+
+        User::firstOrCreate(
+            ['email' => 'factory@businesserp.test'],
+            ['name' => 'Factory Manager', 'password' => 'password']
+        )->syncRoles('Factory Manager');
+
         $this->call(SiteSeeder::class);
     }
 }

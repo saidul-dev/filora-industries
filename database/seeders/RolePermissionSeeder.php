@@ -13,13 +13,25 @@ class RolePermissionSeeder extends Seeder
      * Canonical display order for role lists (Roles & Permissions page,
      * the Users form role picker). Not creation order — just presentation.
      */
-    public const ROLE_ORDER = ['Super Admin', 'Admin', 'Manager', 'HR', 'Accountant', 'Employee'];
+    public const ROLE_ORDER = ['Super Admin', 'Admin', 'Manager', 'Sales Person', 'Accountant', 'Factory Manager', 'HR', 'Employee'];
 
     /**
      * Base modules (README §3) and the actions available on each.
      * Permission names follow the "module.action" convention.
      */
     protected array $modules = [
+        // Order-to-delivery cycle (docs/order-to-delivery.md):
+        //   sales        — Sales Orders, Proforma Invoices, LC, Delivery
+        //                  (approve = confirm SO / generate + issue PI / LC /
+        //                  close, and see every Sales Person's orders;
+        //                  deliver = post a delivery against a PI)
+        //   requisitions — Inventory Requisitions raised under a PI
+        //   purchases    — Purchase Orders + Goods Receipt (receive)
+        //   production   — BOM setup + Production Orders under a PI
+        'sales'        => ['view', 'create', 'edit', 'delete', 'approve', 'deliver'],
+        'requisitions' => ['view', 'create', 'edit', 'delete', 'approve'],
+        'purchases'    => ['view', 'create', 'edit', 'delete', 'receive'],
+        'production'   => ['view', 'create', 'edit', 'delete', 'approve'],
         'inventory' => ['view', 'create', 'edit', 'delete', 'approve'],
         'parties'   => ['view', 'create', 'edit', 'delete'],
         'accounts'  => ['view', 'create', 'edit', 'delete', 'approve'],
@@ -55,6 +67,7 @@ class RolePermissionSeeder extends Seeder
             ->syncPermissions(Permission::all());
 
         Role::findOrCreate('Manager')->syncPermissions([
+            'sales.view', 'requisitions.view', 'purchases.view', 'production.view',
             'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.approve',
             'parties.view', 'parties.create', 'parties.edit',
             'projects.view', 'projects.create', 'projects.edit',
@@ -74,13 +87,40 @@ class RolePermissionSeeder extends Seeder
             'reports.view',
         ]);
 
+        // Sales Person — enters and manages Sales Orders for their own
+        // buyers only (SalesOrder::visibleTo scopes this; anyone holding
+        // sales.approve sees everyone's). Confirming an order and turning
+        // it into a Proforma Invoice is an Admin step (sales.approve).
+        Role::findOrCreate('Sales Person')->syncPermissions([
+            'sales.view', 'sales.create', 'sales.edit', 'sales.delete',
+            'parties.view', 'parties.create',
+            'inventory.view',
+        ]);
+
+        // Accounts — purchase cost entries (Purchase Orders), customer
+        // collections against a PI, payments, and inventory valuation.
         Role::findOrCreate('Accountant')->syncPermissions([
             'accounts.view', 'accounts.create', 'accounts.edit', 'accounts.approve',
+            'sales.view', 'requisitions.view',
+            'purchases.view', 'purchases.create', 'purchases.edit',
+            'inventory.view',
             'parties.view',
             // "Accountant (payroll approval)" — reviews and approves salary
             // runs before they post to Accounts, but doesn't manage HR records.
             'hrm.view', 'hrm.approve',
             'reports.view',
+        ]);
+
+        // Factory Manager / Production Responsible — BOM, Production Orders
+        // under a PI (raw material consumption + status), raising
+        // requisitions for what the factory needs, and receiving goods
+        // into factory stock.
+        Role::findOrCreate('Factory Manager')->syncPermissions([
+            'production.view', 'production.create', 'production.edit', 'production.delete', 'production.approve',
+            'requisitions.view', 'requisitions.create', 'requisitions.edit', 'requisitions.delete',
+            'purchases.view', 'purchases.receive',
+            'sales.view',
+            'inventory.view', 'inventory.create',
         ]);
 
         // Auto-provisioned on Employee::enableLogin() — self-service, view-only

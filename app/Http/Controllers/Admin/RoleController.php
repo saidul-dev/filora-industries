@@ -18,7 +18,7 @@ class RoleController extends Controller implements HasMiddleware
     /**
      * Display order for role lists — not creation order, just presentation.
      */
-    protected const ROLE_ORDER = ['Super Admin', 'Admin', 'Manager', 'HR', 'Accountant', 'Employee'];
+    protected const ROLE_ORDER = ['Super Admin', 'Admin', 'Manager', 'Sales Person', 'Accountant', 'Factory Manager', 'HR', 'Employee'];
 
     public static function middleware(): array
     {
