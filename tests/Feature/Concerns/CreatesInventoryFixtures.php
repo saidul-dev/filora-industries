@@ -73,12 +73,12 @@ trait CreatesInventoryFixtures
 
     protected function makeCustomer(string $name = 'Buyer Garments Ltd.'): Party
     {
-        return Party::create(['name' => $name, 'is_customer' => true, 'status' => true]);
+        return Party::create(['name' => $name, 'phone' => '01700'.str_pad((string) (Party::count() + 1), 6, '0', STR_PAD_LEFT), 'is_customer' => true, 'status' => true]);
     }
 
     protected function makeSupplier(string $name = 'Raw Material Supplier'): Party
     {
-        return Party::create(['name' => $name, 'is_supplier' => true, 'status' => true]);
+        return Party::create(['name' => $name, 'phone' => '01800'.str_pad((string) (Party::count() + 1), 6, '0', STR_PAD_LEFT), 'is_supplier' => true, 'status' => true]);
     }
 
     protected function stockIn(Product $product, Site $site, float $quantity, float $unitCost, ?User $by = null): void

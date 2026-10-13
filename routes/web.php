@@ -31,6 +31,7 @@ use App\Http\Controllers\Admin\ProfitLossController;
 use App\Http\Controllers\Admin\ProjectController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SalaryStructureController;
+use App\Http\Controllers\Admin\SalesOrderController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\SiteHealthController;
 use App\Http\Controllers\Admin\SiteController;
@@ -92,6 +93,12 @@ Route::prefix('admin')->group(function () {
         Route::patch('/products/{product}/toggle-status', [ProductController::class, 'toggleStatus'])->name('products.toggle-status');
         Route::get('/products/barcode', [ProductController::class, 'barcode'])->name('products.barcode');
         Route::get('/products/{product}/history', [ProductController::class, 'history'])->name('products.history');
+
+        // Order-to-delivery cycle (docs/order-to-delivery.md): Sales Order
+        // → Proforma Invoice → Requisition/Purchase/Production → Delivery.
+        Route::resource('sales-orders', SalesOrderController::class)->parameters(['sales-orders' => 'salesOrder']);
+        Route::post('/sales-orders/{salesOrder}/confirm', [SalesOrderController::class, 'confirm'])->name('sales-orders.confirm');
+        Route::post('/sales-orders/{salesOrder}/cancel', [SalesOrderController::class, 'cancel'])->name('sales-orders.cancel');
 
         // Production — Bill of Materials per Manufactured product (see
         // docs/order-to-delivery.md).

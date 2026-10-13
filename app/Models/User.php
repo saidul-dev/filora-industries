@@ -88,6 +88,16 @@ class User extends Authenticatable
         return $this->hasRole(['Super Admin', 'Admin']);
     }
 
+    /**
+     * A Sales Person only works their own buyers' Sales Orders / Proforma
+     * Invoices — unless they've also been granted sales.approve, which is
+     * what lets Admin see (and confirm) every order.
+     */
+    public function seesOnlyOwnSales(): bool
+    {
+        return $this->hasRole('Sales Person') && ! $this->can('sales.approve');
+    }
+
     public function defaultSite(): ?Site
     {
         return $this->sites()->wherePivot('is_default', true)->first()
