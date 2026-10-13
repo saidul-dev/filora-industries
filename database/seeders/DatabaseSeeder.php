@@ -65,5 +65,6 @@ class DatabaseSeeder extends Seeder
         )->syncRoles('Factory Manager');
 
         $this->call(SiteSeeder::class);
+        $this->call(GarmentsAccessoriesSeeder::class);
     }
 }
