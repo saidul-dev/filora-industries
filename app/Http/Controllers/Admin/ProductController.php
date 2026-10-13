@@ -8,6 +8,7 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\CompanySetting;
 use App\Models\Product;
+use App\Models\ProductionOrder;
 use App\Models\ProductVariant;
 use App\Models\PurchaseReceipt;
 use App\Models\Site;
@@ -237,6 +238,7 @@ class ProductController extends Controller implements HasMiddleware
         $refs = [
             StockTransfer::class => fn ($r) => ['label' => $r->transfer_no, 'url' => route('stock.transfers.show', $r)],
             PurchaseReceipt::class => fn ($r) => ['label' => $r->receipt_no, 'url' => route('purchases.show', $r->purchase_id)],
+            ProductionOrder::class => fn ($r) => ['label' => $r->production_no, 'url' => route('production-orders.show', $r)],
         ];
 
         $movements->loadMorph('reference', array_map(fn () => [], $refs));

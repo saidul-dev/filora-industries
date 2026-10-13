@@ -15,8 +15,8 @@ use Illuminate\Support\Collection;
  * its fulfillment plan (docs/order-to-delivery.md):
  *
  *  - a "purchase" line needs its undelivered quantity as finished goods;
- *  - a "production" line needs its BOM raw materials for the quantity not
- *    yet delivered;
+ *  - a "production" line needs its BOM raw materials for the quantity no
+ *    Production Order has been issued for yet;
  *  - a "stock" line needs nothing bought.
  *
  * Demand is netted against what's on hand across every Site and what open
@@ -30,7 +30,7 @@ class PiFulfillmentPlanner
      */
     public function purchaseSuggestions(ProformaInvoice $invoice): Collection
     {
-        $invoice->loadMissing(['items.product.bomItems.material', 'items.productVariant.attributeValues']);
+        $invoice->loadMissing(['items.product.bomItems.material', 'items.productVariant.attributeValues', 'items.productionOrders']);
 
         $demand = [];
 
@@ -76,11 +76,13 @@ class PiFulfillmentPlanner
     }
 
     /**
-     * How much of a PI line still has to be sourced — its undelivered quantity.
+     * How much of a PI line still has to be sourced — its undelivered
+     * quantity, or for a production line, what no Production Order has
+     * covered yet (an issued order has already consumed its materials).
      */
     protected function outstandingQuantity($line): float
     {
-        return $line->remaining();
+        return $line->fulfillment === 'production' ? $line->quantityToProduce() : $line->remaining();
     }
 
     protected function addDemand(array &$demand, Product $product, ?ProductVariant $variant, float $quantity, string $reason): void

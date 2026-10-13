@@ -263,6 +263,12 @@
                         @if ($item->fulfillment === 'production' && $item->product->bomItems->isEmpty())
                             <span class="mt-1 block text-[11px] font-semibold text-rose-500">{{ __('No BOM defined') }}</span>
                         @endif
+                        @if ($item->product->isManufactured() && $invoice->isActive() && $item->quantityToProduce() > 0 && $user->can('production.create'))
+                            <a href="{{ route('production-orders.create', ['proforma_invoice_item_id' => $item->id]) }}"
+                               class="mt-1 block text-[11px] font-semibold text-indigo-600 hover:text-indigo-800">
+                                {{ __('Produce :qty →', ['qty' => $qty($item->quantityToProduce())]) }}
+                            </a>
+                        @endif
                     </td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ $qty($item->quantity) }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
                     <td class="px-5 py-3 text-right text-slate-600">{{ $qty($item->delivered_quantity) }}</td>
@@ -392,6 +398,38 @@
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ number_format($purchase->total_amount, 2) }}</td>
                     <td class="px-5 py-3 text-right">
                         <x-status-badge :label="$purchase->status_label" :color="\App\Models\Purchase::STATUS_COLORS[$purchase->status] ?? 'slate'" />
+                    </td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+        </div>
+    </div>
+    @endif
+    @endcan
+
+    <!-- Production orders issued under this PI -->
+    @can('production.view')
+    @if ($invoice->productionOrders->isNotEmpty())
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden mb-4">
+        <div class="px-6 pt-5 pb-3">
+            <h3 class="font-bold text-brand-900">{{ __('Production Orders') }}</h3>
+            <p class="text-xs text-slate-400">{{ __('Completed output is in finished goods stock at the production site.') }}</p>
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full min-w-[640px] text-sm">
+            <tbody class="divide-y divide-slate-100 border-t border-slate-100">
+                @foreach ($invoice->productionOrders as $production)
+                <tr class="hover:bg-slate-50">
+                    <td class="px-5 py-3">
+                        <a href="{{ route('production-orders.show', $production) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $production->production_no }}</a>
+                        <span class="block text-xs text-slate-400">{{ $production->created_at->format('d M, Y') }}</span>
+                    </td>
+                    <td class="px-5 py-3 text-slate-700">{{ $production->label() }}</td>
+                    <td class="px-5 py-3 text-slate-600">{{ $production->site->name }}</td>
+                    <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ $qty($production->status === 'completed' ? $production->produced_quantity : $production->quantity) }} {{ $production->product->stockUnit->short_name ?? '' }}</td>
+                    <td class="px-5 py-3 text-right">
+                        <x-status-badge :label="$production->status_label" :color="\App\Models\ProductionOrder::STATUS_COLORS[$production->status] ?? 'slate'" />
                     </td>
                 </tr>
                 @endforeach

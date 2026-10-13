@@ -21,6 +21,9 @@ class StockMovement extends Model
         'transfer_in' => 'in',
         'adjustment_in' => 'in',
         'sales_return' => 'in',
+        // Raw materials put back into stock when a Production Order is
+        // cancelled before completion (reverses its production_consumption).
+        'production_return' => 'in',
         'sale' => 'out',
         'transfer_out' => 'out',
         'adjustment_out' => 'out',

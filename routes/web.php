@@ -27,6 +27,7 @@ use App\Http\Controllers\Admin\PartyController;
 use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\PayrollRunController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ProductionOrderController;
 use App\Http\Controllers\Admin\ProfitLossController;
 use App\Http\Controllers\Admin\ProformaInvoiceController;
 use App\Http\Controllers\Admin\PurchaseController;
@@ -125,11 +126,16 @@ Route::prefix('admin')->group(function () {
         Route::post('/purchases/{purchase}/receive', [PurchaseController::class, 'receive'])->name('purchases.receive.store');
         Route::get('/purchases/{purchase}/print', [PurchaseController::class, 'print'])->name('purchases.print');
 
-        // Production — Bill of Materials per Manufactured product (see
-        // docs/order-to-delivery.md).
+        // Production — Bill of Materials per Manufactured product, and
+        // Production Orders under a PI line (see docs/order-to-delivery.md).
         Route::get('/production/bom', [BomController::class, 'index'])->name('bom.index');
         Route::get('/production/bom/{product}', [BomController::class, 'edit'])->name('bom.edit');
         Route::put('/production/bom/{product}', [BomController::class, 'update'])->name('bom.update');
+        Route::resource('production-orders', ProductionOrderController::class)->only(['index', 'create', 'store', 'show'])
+            ->parameters(['production-orders' => 'productionOrder']);
+        Route::post('/production-orders/{productionOrder}/start', [ProductionOrderController::class, 'start'])->name('production-orders.start');
+        Route::post('/production-orders/{productionOrder}/complete', [ProductionOrderController::class, 'complete'])->name('production-orders.complete');
+        Route::post('/production-orders/{productionOrder}/cancel', [ProductionOrderController::class, 'cancel'])->name('production-orders.cancel');
 
         Route::get('/stock/initial-stock', [InitialStockController::class, 'index'])->name('stock.initial.index');
         Route::post('/stock/initial-stock', [InitialStockController::class, 'store'])->name('stock.initial.store');

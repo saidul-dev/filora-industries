@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ProformaInvoiceItem extends Model
 {
@@ -56,6 +57,23 @@ class ProformaInvoiceItem extends Model
     public static function defaultFulfillmentFor(Product $product): string
     {
         return $product->isManufactured() ? 'production' : 'purchase';
+    }
+
+    public function productionOrders(): HasMany
+    {
+        return $this->hasMany(ProductionOrder::class);
+    }
+
+    /**
+     * How much of this line still has to be put into production: the
+     * ordered quantity less what non-cancelled Production Orders already
+     * produced or plan to, capped at what is still undelivered.
+     */
+    public function quantityToProduce(): float
+    {
+        $covered = $this->productionOrders->sum(fn (ProductionOrder $order) => $order->outputQuantity());
+
+        return max(round(min($this->remaining(), (float) $this->quantity - $covered), 4), 0);
     }
 
     public function remaining(): float
