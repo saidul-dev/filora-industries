@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\CollectionController;
 use App\Http\Controllers\Admin\ContactMessageController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DayBookController;
+use App\Http\Controllers\Admin\DeliveryController;
 use App\Http\Controllers\Admin\DepartmentController;
 use App\Http\Controllers\Admin\DesignationController;
 use App\Http\Controllers\Admin\DueReportController;
@@ -114,6 +115,9 @@ Route::prefix('admin')->group(function () {
         Route::post('/proforma-invoices/{proformaInvoice}/close', [ProformaInvoiceController::class, 'close'])->name('proforma-invoices.close');
         Route::post('/proforma-invoices/{proformaInvoice}/cancel', [ProformaInvoiceController::class, 'cancel'])->name('proforma-invoices.cancel');
         Route::get('/proforma-invoices/{proformaInvoice}/print', [ProformaInvoiceController::class, 'print'])->name('proforma-invoices.print');
+
+        Route::resource('deliveries', DeliveryController::class)->only(['index', 'create', 'store', 'show']);
+        Route::get('/deliveries/{delivery}/print', [DeliveryController::class, 'print'])->name('deliveries.print');
 
         Route::resource('purchase-requisitions', PurchaseRequisitionController::class)
             ->parameters(['purchase-requisitions' => 'purchaseRequisition']);

@@ -439,4 +439,41 @@
     </div>
     @endif
     @endcan
+    <!-- Deliveries against this PI -->
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-6 pt-5 pb-3">
+            <div>
+                <h3 class="font-bold text-brand-900">{{ __('Deliveries') }}</h3>
+                <p class="text-xs text-slate-400">{{ __('Fulfilled from existing stock, purchased finished goods and factory output — from any site.') }}</p>
+            </div>
+            @if ($invoice->isActive() && $user->can('sales.deliver') && $invoice->items->contains(fn ($item) => $item->remaining() > 0))
+            <a href="{{ route('deliveries.create', ['proforma_invoice_id' => $invoice->id]) }}"
+               class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                {{ __('New Delivery') }}
+            </a>
+            @endif
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full min-w-[640px] text-sm">
+            <tbody class="divide-y divide-slate-100 border-t border-slate-100">
+                @forelse ($invoice->deliveries as $delivery)
+                <tr class="hover:bg-slate-50">
+                    <td class="px-5 py-3">
+                        <a href="{{ route('deliveries.show', $delivery) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $delivery->delivery_no }}</a>
+                        <span class="block text-xs text-slate-400">{{ $delivery->delivery_date->format('d M, Y') }}</span>
+                    </td>
+                    <td class="px-5 py-3 text-slate-600">{{ __('From :site', ['site' => $delivery->site->name]) }}</td>
+                    <td class="px-5 py-3 text-slate-600">{{ trans_choice(':count item|:count items', $delivery->items_count, ['count' => $delivery->items_count]) }}</td>
+                    <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ number_format($delivery->sale_amount, 2) }}</td>
+                </tr>
+                @empty
+                <tr>
+                    <td class="px-5 py-6 text-center text-slate-400">{{ __('Nothing delivered yet.') }}</td>
+                </tr>
+                @endforelse
+            </tbody>
+        </table>
+        </div>
+    </div>
 </x-app-layout>

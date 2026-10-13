@@ -133,6 +133,11 @@ class ProformaInvoice extends Model
         return $this->hasMany(ProductionOrder::class);
     }
 
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(Delivery::class);
+    }
+
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
         return $user->seesOnlyOwnSales()
@@ -175,6 +180,19 @@ class ProformaInvoice extends Model
         if (in_array($this->status, ['issued', 'lc_issued'], true)) {
             $this->update(['status' => 'in_progress']);
         }
+    }
+
+    /**
+     * After a delivery: Delivered once every line is fully delivered,
+     * otherwise Partially Delivered.
+     */
+    public function recalculateDeliveryStatus(): void
+    {
+        $this->load('items');
+
+        $fullyDelivered = $this->items->every(fn (ProformaInvoiceItem $item) => $item->remaining() <= 0);
+
+        $this->update(['status' => $fullyDelivered ? 'delivered' : 'partially_delivered']);
     }
 
     /**

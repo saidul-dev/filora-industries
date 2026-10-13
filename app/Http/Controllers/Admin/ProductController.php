@@ -7,6 +7,7 @@ use App\Models\Attribute;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\CompanySetting;
+use App\Models\Delivery;
 use App\Models\Product;
 use App\Models\ProductionOrder;
 use App\Models\ProductVariant;
@@ -239,6 +240,7 @@ class ProductController extends Controller implements HasMiddleware
             StockTransfer::class => fn ($r) => ['label' => $r->transfer_no, 'url' => route('stock.transfers.show', $r)],
             PurchaseReceipt::class => fn ($r) => ['label' => $r->receipt_no, 'url' => route('purchases.show', $r->purchase_id)],
             ProductionOrder::class => fn ($r) => ['label' => $r->production_no, 'url' => route('production-orders.show', $r)],
+            Delivery::class => fn ($r) => ['label' => $r->delivery_no, 'url' => route('deliveries.show', $r)],
         ];
 
         $movements->loadMorph('reference', array_map(fn () => [], $refs));
