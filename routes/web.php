@@ -28,6 +28,7 @@ use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\PayrollRunController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ProfitLossController;
+use App\Http\Controllers\Admin\ProformaInvoiceController;
 use App\Http\Controllers\Admin\ProjectController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SalaryStructureController;
@@ -99,6 +100,17 @@ Route::prefix('admin')->group(function () {
         Route::resource('sales-orders', SalesOrderController::class)->parameters(['sales-orders' => 'salesOrder']);
         Route::post('/sales-orders/{salesOrder}/confirm', [SalesOrderController::class, 'confirm'])->name('sales-orders.confirm');
         Route::post('/sales-orders/{salesOrder}/cancel', [SalesOrderController::class, 'cancel'])->name('sales-orders.cancel');
+
+        Route::post('/sales-orders/{salesOrder}/proforma-invoice', [ProformaInvoiceController::class, 'store'])->name('proforma-invoices.store');
+        Route::resource('proforma-invoices', ProformaInvoiceController::class)->only(['index', 'show', 'edit', 'update'])
+            ->parameters(['proforma-invoices' => 'proformaInvoice']);
+        Route::post('/proforma-invoices/{proformaInvoice}/issue', [ProformaInvoiceController::class, 'issue'])->name('proforma-invoices.issue');
+        Route::post('/proforma-invoices/{proformaInvoice}/lc', [ProformaInvoiceController::class, 'attachLc'])->name('proforma-invoices.lc');
+        Route::get('/proforma-invoices/{proformaInvoice}/lc-file', [ProformaInvoiceController::class, 'lcFile'])->name('proforma-invoices.lc-file');
+        Route::post('/proforma-invoices/{proformaInvoice}/ready', [ProformaInvoiceController::class, 'markReady'])->name('proforma-invoices.ready');
+        Route::post('/proforma-invoices/{proformaInvoice}/close', [ProformaInvoiceController::class, 'close'])->name('proforma-invoices.close');
+        Route::post('/proforma-invoices/{proformaInvoice}/cancel', [ProformaInvoiceController::class, 'cancel'])->name('proforma-invoices.cancel');
+        Route::get('/proforma-invoices/{proformaInvoice}/print', [ProformaInvoiceController::class, 'print'])->name('proforma-invoices.print');
 
         // Production — Bill of Materials per Manufactured product (see
         // docs/order-to-delivery.md).

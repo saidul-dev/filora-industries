@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class SalesOrder extends Model
 {
@@ -79,6 +80,21 @@ class SalesOrder extends Model
     public function confirmedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'confirmed_by');
+    }
+
+    public function proformaInvoices(): HasMany
+    {
+        return $this->hasMany(ProformaInvoice::class);
+    }
+
+    /**
+     * The live (non-cancelled) PI generated from this order, if any —
+     * cancelling a PI hands the order back to Confirmed so a corrected
+     * one can be generated.
+     */
+    public function proformaInvoice(): HasOne
+    {
+        return $this->hasOne(ProformaInvoice::class)->where('status', '!=', 'cancelled')->latestOfMany();
     }
 
     /**

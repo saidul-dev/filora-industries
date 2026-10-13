@@ -101,7 +101,7 @@ class SalesOrderController extends Controller implements HasMiddleware
         $this->authorizeVisible($salesOrder);
 
         $salesOrder->load([
-            'party', 'salesPerson', 'creator', 'confirmedBy',
+            'party', 'salesPerson', 'creator', 'confirmedBy', 'proformaInvoice',
             'items.product.stockUnit', 'items.productVariant.attributeValues',
         ]);
 

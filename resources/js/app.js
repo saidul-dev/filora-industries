@@ -339,6 +339,50 @@ Alpine.data('quotationCart', (initial) => ({
     },
 }));
 
+// Proforma Invoice line editor — saleCart plus a planned fulfillment path
+// per line (stock / purchase / production), defaulted from the product type.
+Alpine.data('piCart', (initial) => ({
+    itemOptions: initial.itemOptions || [],
+    items: initial.items || [],
+    query: '',
+    open: false,
+    discount: initial.discount ?? '',
+
+    get filtered() {
+        const chosen = new Set(this.items.map((i) => i.id));
+        const pool = this.itemOptions.filter((o) => !chosen.has(o.id));
+        if (!this.query) return pool;
+        const q = this.query.toLowerCase();
+        return pool.filter((o) => o.name.toLowerCase().includes(q));
+    },
+
+    get subtotal() {
+        return this.items.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+    },
+
+    get total() {
+        return Math.max(this.subtotal - (Number(this.discount) || 0), 0);
+    },
+
+    addItem(opt) {
+        this.items.push({
+            id: opt.id,
+            name: opt.name,
+            unit: opt.unit,
+            type: opt.type,
+            quantity: '',
+            unit_price: opt.price || '',
+            fulfillment: opt.type === 'manufactured' ? 'production' : 'purchase',
+        });
+        this.query = '';
+        this.open = false;
+    },
+
+    removeItem(id) {
+        this.items = this.items.filter((i) => i.id !== id);
+    },
+}));
+
 // Bill of Materials editor — one row per raw material, quantity consumed
 // per ONE finished unit. Estimated cost is display-only (the real cost is
 // captured from stock at the moment a Production Order consumes it).

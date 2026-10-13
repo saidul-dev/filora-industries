@@ -68,7 +68,7 @@
             $canDelete = $order->isEditable() && auth()->user()->can('sales.delete');
             $canApprove = auth()->user()->can('sales.approve');
         @endphp
-        @if ($canEdit || $canDelete || ($canApprove && in_array($order->status, ['pending', 'confirmed'], true)))
+        @if ($canEdit || $canDelete || $order->proformaInvoice || ($canApprove && in_array($order->status, ['pending', 'confirmed'], true)))
         <div class="mt-5 flex flex-wrap gap-3 border-t border-slate-100 pt-5">
             @if ($canEdit)
             <a href="{{ route('sales-orders.edit', $order) }}"
@@ -87,6 +87,24 @@
                     {{ __('Confirm Order') }}
                 </button>
             </form>
+            @endif
+
+            @if ($canApprove && $order->status === 'confirmed')
+            <form method="POST" action="{{ route('proforma-invoices.store', $order) }}"
+                  onsubmit="return confirm('{{ __('Generate a Proforma Invoice from :no?', ['no' => $order->order_no]) }}');">
+                @csrf
+                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m3.75 9v6m3-3H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+                    {{ __('Generate Proforma Invoice') }}
+                </button>
+            </form>
+            @endif
+
+            @if ($order->proformaInvoice)
+            <a href="{{ route('proforma-invoices.show', $order->proformaInvoice) }}"
+               class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+                {{ __('View :no', ['no' => $order->proformaInvoice->pi_no]) }}
+            </a>
             @endif
 
             @if ($canApprove && in_array($order->status, ['pending', 'confirmed'], true))
