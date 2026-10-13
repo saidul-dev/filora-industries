@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AttendanceController;
 use App\Http\Controllers\Admin\BalanceSheetController;
+use App\Http\Controllers\Admin\BomController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CapitalTransactionController;
 use App\Http\Controllers\Admin\CategoryController;
@@ -91,6 +92,12 @@ Route::prefix('admin')->group(function () {
         Route::patch('/products/{product}/toggle-status', [ProductController::class, 'toggleStatus'])->name('products.toggle-status');
         Route::get('/products/barcode', [ProductController::class, 'barcode'])->name('products.barcode');
         Route::get('/products/{product}/history', [ProductController::class, 'history'])->name('products.history');
+
+        // Production — Bill of Materials per Manufactured product (see
+        // docs/order-to-delivery.md).
+        Route::get('/production/bom', [BomController::class, 'index'])->name('bom.index');
+        Route::get('/production/bom/{product}', [BomController::class, 'edit'])->name('bom.edit');
+        Route::put('/production/bom/{product}', [BomController::class, 'update'])->name('bom.update');
 
         Route::get('/stock/initial-stock', [InitialStockController::class, 'index'])->name('stock.initial.index');
         Route::post('/stock/initial-stock', [InitialStockController::class, 'store'])->name('stock.initial.store');

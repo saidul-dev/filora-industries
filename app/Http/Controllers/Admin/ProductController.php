@@ -34,7 +34,11 @@ class ProductController extends Controller implements HasMiddleware
 
     public function index(Request $request)
     {
+        $type = array_key_exists($request->get('type'), Product::TYPES) ? $request->get('type') : null;
+
         $products = Product::with(['category', 'brand', 'stockUnit'])
+            ->withCount('bomItems')
+            ->when($type, fn ($q) => $q->where('product_type', $type))
             ->when($request->filled('q'), fn ($q) => $q->where(function ($q) use ($request) {
                 $q->where('name', 'like', "%{$request->q}%")
                     ->orWhere('sku', 'like', "%{$request->q}%")
@@ -44,7 +48,7 @@ class ProductController extends Controller implements HasMiddleware
             ->paginate(15)
             ->withQueryString();
 
-        return view('admin.products.index', compact('products'));
+        return view('admin.products.index', compact('products', 'type'));
     }
 
     public function create()
@@ -279,6 +283,7 @@ class ProductController extends Controller implements HasMiddleware
             'sku' => ['required', 'string', 'max:100', Rule::unique('products', 'sku')->ignore($product?->id)],
             'barcode' => ['nullable', 'string', 'max:100', Rule::unique('products', 'barcode')->ignore($product?->id)],
             'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'product_type' => ['nullable', Rule::in(array_keys(Product::TYPES))],
             'brand_id' => ['nullable', 'integer', 'exists:brands,id'],
             'stock_unit_id' => ['required', 'integer', 'exists:units,id'],
             'purchase_unit_id' => ['nullable', 'integer', 'exists:units,id'],
@@ -310,6 +315,10 @@ class ProductController extends Controller implements HasMiddleware
             'guarantee_period' => ['nullable', 'integer', 'min:1'],
             'guarantee_unit' => ['nullable', 'required_with:guarantee_period', 'in:days,months,years'],
         ]);
+
+        // Older clients/imports that never send a type keep the product's
+        // current one (or the column default for a new product).
+        $validated['product_type'] ??= $product?->product_type ?? 'direct_purchase';
 
         // Normalize booleans (unchecked checkboxes are absent from the request).
         foreach (['has_variants', 'track_batch', 'track_expiry', 'track_serial'] as $flag) {

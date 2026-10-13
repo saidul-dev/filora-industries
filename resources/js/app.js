@@ -339,6 +339,38 @@ Alpine.data('quotationCart', (initial) => ({
     },
 }));
 
+// Bill of Materials editor — one row per raw material, quantity consumed
+// per ONE finished unit. Estimated cost is display-only (the real cost is
+// captured from stock at the moment a Production Order consumes it).
+Alpine.data('bomEditor', (initial) => ({
+    itemOptions: initial.itemOptions || [],
+    items: initial.items || [],
+    query: '',
+    open: false,
+
+    get filtered() {
+        const chosen = new Set(this.items.map((i) => i.id));
+        const pool = this.itemOptions.filter((o) => !chosen.has(o.id));
+        if (!this.query) return pool;
+        const q = this.query.toLowerCase();
+        return pool.filter((o) => o.name.toLowerCase().includes(q));
+    },
+
+    get unitCost() {
+        return this.items.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.cost) || 0), 0);
+    },
+
+    addItem(opt) {
+        this.items.push({ id: opt.id, name: opt.name, unit: opt.unit, cost: opt.cost, quantity: '', note: '' });
+        this.query = '';
+        this.open = false;
+    },
+
+    removeItem(id) {
+        this.items = this.items.filter((i) => i.id !== id);
+    },
+}));
+
 Alpine.data('posTerminal', (initial) => ({
     siteId: initial.siteId,
     accounts: initial.accounts || [],

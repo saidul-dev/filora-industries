@@ -15,8 +15,15 @@
         </div>
     </x-slot>
 
-    <form method="GET" action="{{ route('products.index') }}" class="mb-4 max-w-md">
-        <div class="relative">
+    <form method="GET" action="{{ route('products.index') }}" class="mb-4 flex flex-wrap items-center gap-3">
+        <select name="type" onchange="this.form.submit()"
+                class="w-60 rounded-lg border-slate-200 bg-white py-2 text-sm focus:border-accent-500 focus:ring-accent-500">
+            <option value="">{{ __('All product types') }}</option>
+            @foreach (\App\Models\Product::TYPES as $typeKey => $typeLabel)
+                <option value="{{ $typeKey }}" @selected($type === $typeKey)>{{ __($typeLabel) }}</option>
+            @endforeach
+        </select>
+        <div class="relative w-full max-w-md">
             <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
             <input type="search" name="q" value="{{ request('q') }}" placeholder="{{ __('Search by name, SKU or barcode…') }}"
                    class="w-full rounded-lg border-slate-200 bg-white pl-9 pr-4 py-2 text-sm focus:border-accent-500 focus:ring-accent-500 placeholder:text-slate-400">
@@ -25,11 +32,12 @@
 
     <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
         <div class="overflow-x-auto">
-        <table class="w-full min-w-[900px] text-sm">
+        <table class="w-full min-w-[1040px] text-sm">
             <thead>
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-5 py-3 font-semibold">{{ __('Product') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('SKU') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Type') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Category') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Brand') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Unit') }}</th>
@@ -55,6 +63,22 @@
                         </div>
                     </td>
                     <td class="px-5 py-3 text-slate-600">{{ $product->sku }}</td>
+                    <td class="px-5 py-3">
+                        @php $typeStyle = match ($product->product_type) {
+                            'manufactured' => 'bg-indigo-50 text-indigo-600 ring-indigo-200',
+                            'raw_material' => 'bg-amber-50 text-amber-600 ring-amber-200',
+                            default => 'bg-sky-50 text-sky-600 ring-sky-200',
+                        }; @endphp
+                        <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 {{ $typeStyle }}">{{ __(\App\Models\Product::TYPES[$product->product_type] ?? $product->product_type) }}</span>
+                        @if ($product->isManufactured())
+                            @php $bomLabel = $product->bom_items_count ? trans_choice('BOM: :count material|BOM: :count materials', $product->bom_items_count, ['count' => $product->bom_items_count]) : __('No BOM yet'); @endphp
+                            @can('production.view')
+                            <a href="{{ route('bom.edit', $product) }}" class="mt-1 block text-[11px] font-semibold {{ $product->bom_items_count ? 'text-accent-600 hover:text-accent-800' : 'text-rose-500 hover:text-rose-700' }}">{{ $bomLabel }}</a>
+                            @else
+                            <span class="mt-1 block text-[11px] font-semibold {{ $product->bom_items_count ? 'text-slate-500' : 'text-rose-500' }}">{{ $bomLabel }}</span>
+                            @endcan
+                        @endif
+                    </td>
                     <td class="px-5 py-3 text-slate-600">{{ $product->category->name ?? '—' }}</td>
                     <td class="px-5 py-3 text-slate-600">{{ $product->brand->name ?? '—' }}</td>
                     <td class="px-5 py-3 text-slate-600">{{ $product->stockUnit->short_name ?? '—' }}</td>
@@ -106,7 +130,7 @@
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="9" class="px-5 py-10 text-center text-slate-400">
+                    <td colspan="10" class="px-5 py-10 text-center text-slate-400">
                         @if (request('q'))
                             {{ __('No products match ":query".', ['query' => request('q')]) }}
                         @else

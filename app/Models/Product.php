@@ -9,11 +9,25 @@ use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
 {
+    /**
+     * How a product is replenished (see docs/order-to-delivery.md):
+     * manufactured items are produced at the factory against their BOM,
+     * direct-purchase items are bought ready-made, and raw materials are
+     * the components a BOM consumes. A Proforma Invoice line defaults
+     * its fulfillment path (production vs. purchase) from this.
+     */
+    public const TYPES = [
+        'manufactured' => 'Manufactured Product',
+        'direct_purchase' => 'Direct-Purchase Finished Product',
+        'raw_material' => 'Raw Material / Component',
+    ];
+
     protected $fillable = [
         'name',
         'sku',
         'barcode',
         'category_id',
+        'product_type',
         'brand_id',
         'stock_unit_id',
         'purchase_unit_id',
@@ -120,5 +134,23 @@ class Product extends Model
     public function isVariable(): bool
     {
         return (bool) $this->has_variants;
+    }
+
+    /**
+     * Bill of Materials — raw materials consumed per one stock unit.
+     */
+    public function bomItems(): HasMany
+    {
+        return $this->hasMany(BomItem::class);
+    }
+
+    public function isManufactured(): bool
+    {
+        return $this->product_type === 'manufactured';
+    }
+
+    public function getTypeLabelAttribute(): string
+    {
+        return self::TYPES[$this->product_type] ?? $this->product_type;
     }
 }

@@ -134,10 +134,21 @@
     <div class="lg:col-span-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div class="mb-4">
             <h3 class="font-bold text-brand-900">{{ __('Classification') }}</h3>
-            <p class="text-xs text-slate-400">{{ __('Category and brand') }}</p>
+            <p class="text-xs text-slate-400">{{ __('Product type, category and brand') }}</p>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <x-input-label for="product_type" :value="__('Product Type')" />
+                <select id="product_type" name="product_type" required
+                        class="mt-1 block w-full rounded-lg border-slate-300 focus:border-accent-500 focus:ring-accent-500">
+                    @foreach (\App\Models\Product::TYPES as $typeKey => $typeLabel)
+                        <option value="{{ $typeKey }}" @selected(old('product_type', $product->product_type ?? 'direct_purchase') === $typeKey)>{{ __($typeLabel) }}</option>
+                    @endforeach
+                </select>
+                <p class="mt-1 text-[11px] text-slate-400">{{ __('Manufactured products are produced at the factory against a BOM; direct-purchase products are bought ready-made; raw materials are consumed by a BOM.') }}</p>
+                <x-input-error class="mt-2" :messages="$errors->get('product_type')" />
+            </div>
             <div>
                 <x-input-label for="category_id" :value="__('Category')" />
                 <select id="category_id" name="category_id" required
