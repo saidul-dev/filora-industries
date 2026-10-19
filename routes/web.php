@@ -54,10 +54,12 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WebsiteController;
 use Illuminate\Support\Facades\Route;
 
-// Public company website — About, Media, Career, Contact. Every vertical
-// built on this base (property/hospital/resort/agency/restaurant, etc.)
-// gets a public-facing company site out of the box.
-Route::get('/', [WebsiteController::class, 'home'])->name('home');
+// The ERP is the only thing on this domain — the root always goes to
+// sign-in (a signed-in user is bounced on to the dashboard by the guest
+// middleware). Kept under the "home" name for existing links.
+Route::redirect('/', '/login')->name('home');
+
+// Public company website pages — About, Media, Career, Contact.
 Route::get('/about', [WebsiteController::class, 'about'])->name('about');
 Route::get('/media', [WebsiteController::class, 'media'])->name('media');
 Route::get('/career', [WebsiteController::class, 'career'])->name('career');
