@@ -99,6 +99,10 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                 $invoice->items()->create([
                     'product_id' => $item->product_id,
                     'product_variant_id' => $item->product_variant_id,
+                    'style' => $item->style,
+                    'color' => $item->color,
+                    'length_per_unit' => $item->length_per_unit,
+                    'remarks' => $item->remarks,
                     'quantity' => $item->quantity,
                     'unit_price' => $item->unit_price,
                     'subtotal' => $item->subtotal,
@@ -160,6 +164,10 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
             'unit_price' => (float) $item->unit_price,
             'fulfillment' => $item->fulfillment,
             'type' => $item->product->product_type,
+            'style' => $item->style ?? '',
+            'color' => $item->color ?? '',
+            'length_per_unit' => $item->length_per_unit !== null ? (float) $item->length_per_unit : '',
+            'remarks' => $item->remarks ?? '',
         ]))->values();
 
         return view('admin.proforma-invoices.edit', [
@@ -189,10 +197,15 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
             'note' => ['nullable', 'string', 'max:2000'],
             'discount' => ['nullable', 'numeric', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.item' => ['required', 'string', 'distinct'],
+            // Same product may repeat across style/color lines — no "distinct".
+            'items.*.item' => ['required', 'string'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.0001'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
             'items.*.fulfillment' => ['required', Rule::in(array_keys(ProformaInvoiceItem::FULFILLMENTS))],
+            'items.*.style' => ['nullable', 'string', 'max:100'],
+            'items.*.color' => ['nullable', 'string', 'max:100'],
+            'items.*.length_per_unit' => ['nullable', 'numeric', 'min:0'],
+            'items.*.remarks' => ['nullable', 'string', 'max:255'],
         ]);
 
         $rows = [];
@@ -214,6 +227,10 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                 'unit_price' => (float) $row['unit_price'],
                 'subtotal' => round((float) $row['quantity'] * (float) $row['unit_price'], 2),
                 'fulfillment' => $row['fulfillment'],
+                'style' => $row['style'] ?? null,
+                'color' => $row['color'] ?? null,
+                'length_per_unit' => isset($row['length_per_unit']) ? (float) $row['length_per_unit'] : null,
+                'remarks' => $row['remarks'] ?? null,
             ];
         }
 
@@ -242,6 +259,10 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                 $proformaInvoice->items()->create([
                     'product_id' => $row['product']->id,
                     'product_variant_id' => $row['variant']?->id,
+                    'style' => $row['style'],
+                    'color' => $row['color'],
+                    'length_per_unit' => $row['length_per_unit'],
+                    'remarks' => $row['remarks'],
                     'quantity' => $row['quantity'],
                     'unit_price' => $row['unit_price'],
                     'subtotal' => $row['subtotal'],

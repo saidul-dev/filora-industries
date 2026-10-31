@@ -355,21 +355,19 @@ Alpine.data('quotationCart', (initial) => ({
 // per line (stock / purchase / production), defaulted from the product type.
 Alpine.data('piCart', (initial) => ({
     itemOptions: initial.itemOptions || [],
-    items: initial.items || [],
+    items: (initial.items || []).map(threadLine),
     query: '',
     open: false,
     discount: initial.discount ?? '',
 
     get filtered() {
-        const chosen = new Set(this.items.map((i) => i.id));
-        const pool = this.itemOptions.filter((o) => !chosen.has(o.id));
-        if (!this.query) return pool;
+        if (!this.query) return this.itemOptions;
         const q = this.query.toLowerCase();
-        return pool.filter((o) => o.name.toLowerCase().includes(q));
+        return this.itemOptions.filter((o) => o.name.toLowerCase().includes(q));
     },
 
     get subtotal() {
-        return this.items.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+        return this.items.reduce((sum, i) => sum + lineTotal(i), 0);
     },
 
     get total() {
@@ -377,7 +375,7 @@ Alpine.data('piCart', (initial) => ({
     },
 
     addItem(opt) {
-        this.items.push({
+        this.items.push(threadLine({
             id: opt.id,
             name: opt.name,
             unit: opt.unit,
@@ -385,13 +383,13 @@ Alpine.data('piCart', (initial) => ({
             quantity: '',
             unit_price: opt.price || '',
             fulfillment: opt.type === 'manufactured' ? 'production' : 'purchase',
-        });
+        }));
         this.query = '';
         this.open = false;
     },
 
-    removeItem(id) {
-        this.items = this.items.filter((i) => i.id !== id);
+    removeItem(uid) {
+        this.items = this.items.filter((i) => i.uid !== uid);
     },
 }));
 

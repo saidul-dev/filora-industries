@@ -36,6 +36,9 @@
             <div class="text-right space-y-0.5">
                 @if ($invoice->salesOrder)
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('Order Ref.') }}:</span> {{ $invoice->salesOrder->order_no }}{{ $invoice->salesOrder->buyer_reference ? ' / '.$invoice->salesOrder->buyer_reference : '' }}</p>
+                @if ($invoice->salesOrder->buyer_name)
+                <p class="text-slate-600"><span class="text-slate-400">{{ __('Buyer') }}:</span> {{ $invoice->salesOrder->buyer_name }}</p>
+                @endif
                 @endif
                 @if ($invoice->valid_until)
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('Valid Until') }}:</span> {{ $invoice->valid_until->format('d M, Y') }}</p>
@@ -52,47 +55,59 @@
         <table class="mt-6 w-full text-sm">
             <thead>
                 <tr class="border-y-2 border-brand-800 text-left text-xs uppercase tracking-wide text-brand-800">
-                    <th class="py-2 pr-2 font-semibold w-10">#</th>
+                    <th class="py-2 pr-2 font-semibold w-8">#</th>
+                    <th class="py-2 pr-2 font-semibold">{{ __('Style') }}</th>
                     <th class="py-2 pr-2 font-semibold">{{ __('Description') }}</th>
+                    <th class="py-2 px-2 font-semibold">{{ __('Color') }}</th>
                     <th class="py-2 px-2 font-semibold text-right">{{ __('Quantity') }}</th>
-                    <th class="py-2 px-2 font-semibold text-right">{{ __('Unit Price') }}</th>
-                    <th class="py-2 pl-2 font-semibold text-right">{{ __('Amount') }}</th>
+                    <th class="py-2 px-2 font-semibold text-right">{{ __('Length (m)') }}</th>
+                    <th class="py-2 px-2 font-semibold text-right">{{ __('Unit Price (USD)') }}</th>
+                    <th class="py-2 px-2 font-semibold text-right">{{ __('Amount (USD)') }}</th>
+                    <th class="py-2 pl-2 font-semibold">{{ __('Remarks') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-200">
                 @foreach ($invoice->items as $i => $item)
                 <tr>
                     <td class="py-2 pr-2 text-slate-500">{{ $i + 1 }}</td>
+                    <td class="py-2 pr-2 font-semibold text-slate-800">{{ $item->style }}</td>
                     <td class="py-2 pr-2">
                         <span class="font-semibold text-slate-800">{{ $item->label() }}</span>
                         <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
                     </td>
+                    <td class="py-2 px-2 text-slate-700">{{ $item->color }}</td>
                     <td class="py-2 px-2 text-right text-slate-700">{{ rtrim(rtrim(number_format($item->quantity, 4), '0'), '.') }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
-                    <td class="py-2 px-2 text-right text-slate-700">{{ number_format($item->unit_price, 2) }}</td>
-                    <td class="py-2 pl-2 text-right font-semibold text-slate-800">{{ number_format($item->subtotal, 2) }}</td>
+                    <td class="py-2 px-2 text-right text-slate-700">{{ $item->length_per_unit !== null ? rtrim(rtrim(number_format($item->length_per_unit, 2), '0'), '.') : '' }}</td>
+                    <td class="py-2 px-2 text-right text-slate-700">{{ number_format($item->unit_price, 4) }}</td>
+                    <td class="py-2 px-2 text-right font-semibold text-slate-800">{{ number_format($item->subtotal, 2) }}</td>
+                    <td class="py-2 pl-2 text-xs text-slate-600">{{ $item->remarks }}</td>
                 </tr>
                 @endforeach
             </tbody>
             <tfoot>
                 <tr class="border-t-2 border-slate-300">
-                    <td colspan="4" class="pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Subtotal') }}</td>
-                    <td class="pt-3 text-right font-semibold text-slate-800">{{ number_format($invoice->subtotal_amount, 2) }}</td>
+                    <td colspan="7" class="pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Subtotal') }}</td>
+                    <td class="pt-3 px-2 text-right font-semibold text-slate-800">{{ number_format($invoice->subtotal_amount, 2) }}</td>
+                    <td></td>
                 </tr>
                 @if ((float) $invoice->discount_amount > 0)
                 <tr>
-                    <td colspan="4" class="pt-1 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Discount') }}</td>
-                    <td class="pt-1 text-right text-slate-700">− {{ number_format($invoice->discount_amount, 2) }}</td>
+                    <td colspan="7" class="pt-1 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Discount') }}</td>
+                    <td class="pt-1 px-2 text-right text-slate-700">− {{ number_format($invoice->discount_amount, 2) }}</td>
+                    <td></td>
                 </tr>
                 @endif
                 <tr>
-                    <td colspan="4" class="pt-1 text-right text-xs font-bold uppercase tracking-wide text-brand-800">{{ __('Total') }}</td>
-                    <td class="pt-1 text-right text-lg font-black text-brand-900">{{ number_format($invoice->total_amount, 2) }}</td>
+                    <td colspan="7" class="pt-1 text-right text-xs font-bold uppercase tracking-wide text-brand-800">{{ __('Total') }}</td>
+                    <td class="pt-1 px-2 text-right text-lg font-black text-brand-900">USD {{ number_format($invoice->total_amount, 2) }}</td>
+                    <td></td>
                 </tr>
             </tfoot>
         </table>
 
         <p class="mt-4 text-xs italic text-slate-600">
-            {{ __('In Words') }}: {{ \App\Support\AmountInWords::convert((float) $invoice->total_amount, $company->currency_label) }}
+            {{-- Sales documents are always priced in USD, whatever the company currency. --}}
+            {{ __('In Words') }}: {{ \App\Support\AmountInWords::convert((float) $invoice->total_amount, 'US Dollar') }}
         </p>
 
         @if ($invoice->terms)

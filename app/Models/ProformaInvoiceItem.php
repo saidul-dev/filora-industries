@@ -86,6 +86,20 @@ class ProformaInvoiceItem extends Model
         return max(round((float) $this->quantity - (float) $this->delivered_quantity, 4), 0);
     }
 
+    /**
+     * "Style TS472302 · Color 0160 · 2000 m · Rush" — the thread details
+     * that tell apart lines of the same product. Empty when there are none.
+     */
+    public function lineDetails(): string
+    {
+        return collect([
+            $this->style ? "Style {$this->style}" : null,
+            $this->color ? "Color {$this->color}" : null,
+            $this->length_per_unit !== null ? rtrim(rtrim(number_format((float) $this->length_per_unit, 2), '0'), '.').' m' : null,
+            $this->remarks,
+        ])->filter()->implode(' · ');
+    }
+
     public function label(): string
     {
         return $this->product->name.($this->productVariant ? ' — '.$this->productVariant->label : '');

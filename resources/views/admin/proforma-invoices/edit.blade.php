@@ -14,6 +14,10 @@
                     'quantity' => $row['quantity'] ?? '',
                     'unit_price' => $row['unit_price'] ?? '',
                     'fulfillment' => $row['fulfillment'] ?? 'stock',
+                    'style' => $row['style'] ?? '',
+                    'color' => $row['color'] ?? '',
+                    'length_per_unit' => $row['length_per_unit'] ?? '',
+                    'remarks' => $row['remarks'] ?? '',
                 ])
                 : null)
             ->filter()->values();
@@ -74,18 +78,28 @@
                             <th class="px-5 py-3 font-semibold">{{ __('Product') }}</th>
                             <th class="px-5 py-3 font-semibold w-52">{{ __('Fulfillment') }}</th>
                             <th class="px-5 py-3 font-semibold w-36">{{ __('Quantity') }}</th>
-                            <th class="px-5 py-3 font-semibold w-36">{{ __('Unit Price') }}</th>
-                            <th class="px-5 py-3 font-semibold w-36 text-right">{{ __('Subtotal') }}</th>
+                            <th class="px-5 py-3 font-semibold w-36">{{ __('Unit Price (USD)') }}</th>
+                            <th class="px-5 py-3 font-semibold w-36 text-right">{{ __('Subtotal (USD)') }}</th>
                             <th class="px-5 py-3 font-semibold w-12"></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        <template x-for="(item, i) in items" :key="item.id">
-                            <tr class="hover:bg-slate-50">
+                        <template x-for="(item, i) in items" :key="item.uid">
+                            <tr class="hover:bg-slate-50 align-top">
                                 <td class="px-5 py-3">
                                     <input type="hidden" :name="'items[' + i + '][item]'" :value="item.id">
                                     <span class="font-semibold text-slate-800" x-text="item.name"></span>
                                     <span class="block text-xs text-slate-400" x-text="item.unit || ''"></span>
+                                    <div class="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                                        <input type="text" maxlength="100" :name="'items[' + i + '][style]'" x-model="item.style" placeholder="{{ __('Style') }}"
+                                               class="rounded-lg border-slate-300 text-xs focus:border-accent-500 focus:ring-accent-500">
+                                        <input type="text" maxlength="100" :name="'items[' + i + '][color]'" x-model="item.color" placeholder="{{ __('Color') }}"
+                                               class="rounded-lg border-slate-300 text-xs focus:border-accent-500 focus:ring-accent-500">
+                                        <input type="number" step="0.01" min="0" :name="'items[' + i + '][length_per_unit]'" x-model="item.length_per_unit" placeholder="{{ __('Length (m)') }}"
+                                               class="rounded-lg border-slate-300 text-xs focus:border-accent-500 focus:ring-accent-500">
+                                        <input type="text" maxlength="255" :name="'items[' + i + '][remarks]'" x-model="item.remarks" placeholder="{{ __('Remarks') }}"
+                                               class="rounded-lg border-slate-300 text-xs focus:border-accent-500 focus:ring-accent-500">
+                                    </div>
                                 </td>
                                 <td class="px-5 py-3">
                                     <select :name="'items[' + i + '][fulfillment]'" x-model="item.fulfillment"
@@ -100,13 +114,13 @@
                                            class="w-32 rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500" required>
                                 </td>
                                 <td class="px-5 py-3">
-                                    <input type="number" step="0.01" min="0" :name="'items[' + i + '][unit_price]'" x-model="item.unit_price"
+                                    <input type="number" step="0.0001" min="0" :name="'items[' + i + '][unit_price]'" x-model="item.unit_price"
                                            class="w-32 rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500" required>
                                 </td>
                                 <td class="px-5 py-3 text-right font-semibold text-slate-800"
-                                    x-text="((Number(item.quantity) || 0) * (Number(item.unit_price) || 0)).toFixed(2)"></td>
+                                    x-text="(Math.round((Number(item.quantity) || 0) * (Number(item.unit_price) || 0) * 100) / 100).toFixed(2)"></td>
                                 <td class="px-5 py-3 text-right">
-                                    <button type="button" @click="removeItem(item.id)" class="text-slate-400 hover:text-rose-600" title="{{ __('Remove') }}">
+                                    <button type="button" @click="removeItem(item.uid)" class="text-slate-400 hover:text-rose-600" title="{{ __('Remove') }}">
                                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
                                     </button>
                                 </td>
@@ -129,7 +143,7 @@
                         </tr>
                         <tr>
                             <td colspan="4" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total') }}</td>
-                            <td class="px-5 py-2 text-right text-base font-bold text-brand-900" x-text="total.toFixed(2)"></td>
+                            <td class="px-5 py-2 text-right text-base font-bold text-brand-900" x-text="'USD ' + total.toFixed(2)"></td>
                             <td></td>
                         </tr>
                     </tfoot>

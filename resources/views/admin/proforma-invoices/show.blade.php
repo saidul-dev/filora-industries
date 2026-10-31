@@ -312,8 +312,8 @@
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Delivered') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Remaining') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('On Hand') }}</th>
-                    <th class="px-5 py-3 font-semibold text-right">{{ __('Unit Price') }}</th>
-                    <th class="px-5 py-3 font-semibold text-right">{{ __('Subtotal') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Unit Price (USD)') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Subtotal (USD)') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -323,6 +323,9 @@
                     <td class="px-5 py-3">
                         <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
                         <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }} · {{ __(\App\Models\Product::TYPES[$item->product->product_type] ?? '') }}</span>
+                        @if ($item->lineDetails())
+                            <span class="block text-xs text-slate-600">{{ $item->lineDetails() }}</span>
+                        @endif
                     </td>
                     <td class="px-5 py-3">
                         <x-status-badge :label="$item->fulfillment_label" :color="['stock' => 'emerald', 'purchase' => 'sky', 'production' => 'indigo'][$item->fulfillment] ?? 'slate'" />
@@ -340,7 +343,7 @@
                     <td class="px-5 py-3 text-right text-slate-600">{{ $qty($item->delivered_quantity) }}</td>
                     <td class="px-5 py-3 text-right font-semibold {{ $item->remaining() > 0 ? 'text-amber-600' : 'text-emerald-600' }}">{{ $qty($item->remaining()) }}</td>
                     <td class="px-5 py-3 text-right {{ $available >= $item->remaining() ? 'text-emerald-600' : 'text-rose-600' }}">{{ $qty($available) }}</td>
-                    <td class="px-5 py-3 text-right text-slate-600">{{ number_format($item->unit_price, 2) }}</td>
+                    <td class="px-5 py-3 text-right text-slate-600">{{ number_format($item->unit_price, 4) }}</td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ number_format($item->subtotal, 2) }}</td>
                 </tr>
                 @endforeach
@@ -358,7 +361,7 @@
                 @endif
                 <tr>
                     <td colspan="7" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total') }}</td>
-                    <td class="px-5 py-2 text-right text-base font-bold text-brand-900">{{ number_format($invoice->total_amount, 2) }}</td>
+                    <td class="px-5 py-2 text-right text-base font-bold text-brand-900">USD {{ number_format($invoice->total_amount, 2) }}</td>
                 </tr>
             </tfoot>
         </table>

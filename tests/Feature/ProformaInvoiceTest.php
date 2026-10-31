@@ -194,4 +194,54 @@ class ProformaInvoiceTest extends TestCase
         $this->actingAs($salesPerson)->post(route('proforma-invoices.issue', $invoice))->assertForbidden();
         $this->actingAs($this->userWithRole('Sales Person'))->get(route('proforma-invoices.show', $invoice))->assertForbidden();
     }
+
+    public function test_pi_copies_style_color_length_and_remarks_from_sales_order(): void
+    {
+        $thread = $this->makeProduct('manufactured', ['name' => '100% Spun Polyester, 50/2']);
+        $this->actingAs($this->admin)->post(route('sales-orders.store'), [
+            'party_id' => $this->makeCustomer()->id,
+            'order_date' => '2026-09-22',
+            'buyer_name' => 'BHPC & HENRY COTTON',
+            'items' => [
+                ['item' => "product-{$thread->id}", 'quantity' => 65, 'unit_price' => 0.2186, 'style' => 'TS472302', 'color' => '0160', 'length_per_unit' => 2000, 'remarks' => 'Rush'],
+                ['item' => "product-{$thread->id}", 'quantity' => 51, 'unit_price' => 0.2192, 'style' => 'TS472302', 'color' => '0298', 'length_per_unit' => 2000],
+            ],
+        ]);
+        $order = SalesOrder::first();
+        $this->actingAs($this->admin)->post(route('sales-orders.confirm', $order));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $order));
+
+        $invoice = ProformaInvoice::first();
+        $items = $invoice->items()->orderBy('id')->get();
+        $this->assertSame(['0160', '0298'], $items->pluck('color')->all());
+        $this->assertSame('TS472302', $items[0]->style);
+        $this->assertEquals(2000, (float) $items[0]->length_per_unit);
+        $this->assertSame('Rush', $items[0]->remarks);
+        $this->assertSame('0.2186', $items[0]->unit_price);
+
+        // Same product twice survives a draft edit too.
+        $this->actingAs($this->admin)->put(route('proforma-invoices.update', $invoice), [
+            'pi_date' => '2026-09-23',
+            'items' => [
+                ['item' => "product-{$thread->id}", 'quantity' => 65, 'unit_price' => 0.2186, 'fulfillment' => 'production', 'style' => 'TS472302', 'color' => '0160'],
+                ['item' => "product-{$thread->id}", 'quantity' => 41, 'unit_price' => 0.2188, 'fulfillment' => 'production', 'style' => 'TS415022', 'color' => '0132', 'length_per_unit' => 2000, 'remarks' => 'New'],
+            ],
+        ])->assertSessionHasNoErrors();
+        $items = $invoice->items()->orderBy('id')->get();
+        $this->assertSame(['0160', '0132'], $items->pluck('color')->all());
+        $this->assertSame('New', $items[1]->remarks);
+
+        $this->actingAs($this->admin)->get(route('proforma-invoices.show', $invoice))->assertOk()->assertSee('TS415022')->assertSee('0132');
+        $this->actingAs($this->admin)->get(route('proforma-invoices.print', $invoice))->assertOk()
+            ->assertSee('TS415022')->assertSee('BHPC &amp; HENRY COTTON', false);
+    }
+
+    public function test_pi_print_amount_in_words_is_us_dollar(): void
+    {
+        \App\Models\CompanySetting::current()->update(['currency' => 'BDT']);
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $this->confirmedOrder()));
+
+        $this->actingAs($this->admin)->get(route('proforma-invoices.print', ProformaInvoice::first()))
+            ->assertOk()->assertSee('US Dollar')->assertDontSee('Taka');
+    }
 }
