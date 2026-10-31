@@ -229,23 +229,35 @@ Alpine.data('purchaseCart', (initial) => ({
     },
 }));
 
+// Sales Order / PI lines: the same product can sit on many lines (one per
+// style and color), so each line gets its own uid instead of being keyed by
+// product, and line totals round to cents the way the server stores them.
+let lineUid = 0;
+const threadLine = (line) => ({
+    style: '',
+    color: '',
+    length_per_unit: '',
+    remarks: '',
+    ...line,
+    uid: ++lineUid,
+});
+const lineTotal = (i) => Math.round((Number(i.quantity) || 0) * (Number(i.unit_price) || 0) * 100) / 100;
+
 Alpine.data('saleCart', (initial) => ({
     itemOptions: initial.itemOptions || [],
-    items: initial.items || [],
+    items: (initial.items || []).map(threadLine),
     query: '',
     open: false,
     discount: initial.discount ?? '',
 
     get filtered() {
-        const chosen = new Set(this.items.map((i) => i.id));
-        const pool = this.itemOptions.filter((o) => !chosen.has(o.id));
-        if (!this.query) return pool;
+        if (!this.query) return this.itemOptions;
         const q = this.query.toLowerCase();
-        return pool.filter((o) => o.name.toLowerCase().includes(q));
+        return this.itemOptions.filter((o) => o.name.toLowerCase().includes(q));
     },
 
     get subtotal() {
-        return this.items.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+        return this.items.reduce((sum, i) => sum + lineTotal(i), 0);
     },
 
     get total() {
@@ -253,19 +265,19 @@ Alpine.data('saleCart', (initial) => ({
     },
 
     addItem(opt) {
-        this.items.push({
+        this.items.push(threadLine({
             id: opt.id,
             name: opt.name,
             unit: opt.unit,
             quantity: '',
             unit_price: opt.price || '',
-        });
+        }));
         this.query = '';
         this.open = false;
     },
 
-    removeItem(id) {
-        this.items = this.items.filter((i) => i.id !== id);
+    removeItem(uid) {
+        this.items = this.items.filter((i) => i.uid !== uid);
     },
 }));
 

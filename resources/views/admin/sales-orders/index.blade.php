@@ -25,7 +25,7 @@
     <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 mb-6">
         <form method="GET" action="{{ route('sales-orders.index') }}" class="flex flex-wrap items-end gap-4">
             <div class="w-56">
-                <x-input-label for="party_id" :value="__('Buyer')" />
+                <x-input-label for="party_id" :value="__('Customer')" />
                 <div class="mt-1">
                     <x-searchable-select name="party_id" :options="$customers" :selected="$partyId"
                                           placeholder="{{ __('All buyers') }}" :auto-submit="true" />
@@ -56,7 +56,7 @@
             <thead>
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-5 py-3 font-semibold">{{ __('Order') }}</th>
-                    <th class="px-5 py-3 font-semibold">{{ __('Buyer') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Customer') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Sales Person') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Delivery By') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Items') }}</th>

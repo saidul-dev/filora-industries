@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\PicksProducts;
+use App\Http\Controllers\Concerns\WritesSalesOrders;
 use App\Http\Controllers\Controller;
 use App\Models\Party;
 use App\Models\SalesOrder;
@@ -23,6 +24,7 @@ use Illuminate\Validation\ValidationException;
 class SalesOrderController extends Controller implements HasMiddleware
 {
     use PicksProducts;
+    use WritesSalesOrders;
 
     public static function middleware(): array
     {
@@ -69,28 +71,7 @@ class SalesOrderController extends Controller implements HasMiddleware
     {
         [$validated, $rows, $subtotal, $discount] = $this->validateOrder($request);
 
-        $order = DB::transaction(function () use ($validated, $rows, $subtotal, $discount) {
-            $order = SalesOrder::create([
-                'order_no' => 'PENDING',
-                'party_id' => $validated['party_id'],
-                'sales_person_id' => $this->resolveSalesPerson($validated),
-                'order_date' => $validated['order_date'],
-                'delivery_date' => $validated['delivery_date'] ?? null,
-                'buyer_reference' => $validated['buyer_reference'] ?? null,
-                'delivery_terms' => $validated['delivery_terms'] ?? null,
-                'note' => $validated['note'] ?? null,
-                'status' => 'pending',
-                'subtotal_amount' => $subtotal,
-                'discount_amount' => $discount,
-                'total_amount' => $subtotal - $discount,
-                'created_by' => Auth::id(),
-            ]);
-            $order->update(['order_no' => 'SO-'.str_pad($order->id, 6, '0', STR_PAD_LEFT)]);
-
-            $this->createItems($order, $rows);
-
-            return $order;
-        });
+        $order = $this->createSalesOrder($this->headerAttributes($validated), $rows, $discount);
 
         return redirect()->route('sales-orders.show', $order)
             ->with('success', "Sales Order {$order->order_no} created — ".count($rows).' item(s).');
@@ -121,6 +102,10 @@ class SalesOrderController extends Controller implements HasMiddleware
         $items = $salesOrder->items->map(fn ($item) => $this->itemRow($item, [
             'quantity' => (float) $item->quantity,
             'unit_price' => (float) $item->unit_price,
+            'style' => $item->style ?? '',
+            'color' => $item->color ?? '',
+            'length_per_unit' => $item->length_per_unit !== null ? (float) $item->length_per_unit : '',
+            'remarks' => $item->remarks ?? '',
         ]))->values();
 
         return view('admin.sales-orders.edit', $this->formOptions() + ['order' => $salesOrder, 'items' => $items]);
@@ -141,14 +126,7 @@ class SalesOrderController extends Controller implements HasMiddleware
         [$validated, $rows, $subtotal, $discount] = $this->validateOrder($request);
 
         DB::transaction(function () use ($salesOrder, $validated, $rows, $subtotal, $discount) {
-            $salesOrder->update([
-                'party_id' => $validated['party_id'],
-                'sales_person_id' => $this->resolveSalesPerson($validated, $salesOrder),
-                'order_date' => $validated['order_date'],
-                'delivery_date' => $validated['delivery_date'] ?? null,
-                'buyer_reference' => $validated['buyer_reference'] ?? null,
-                'delivery_terms' => $validated['delivery_terms'] ?? null,
-                'note' => $validated['note'] ?? null,
+            $salesOrder->update($this->headerAttributes($validated, $salesOrder) + [
                 'subtotal_amount' => $subtotal,
                 'discount_amount' => $discount,
                 'total_amount' => $subtotal - $discount,
@@ -249,15 +227,23 @@ class SalesOrderController extends Controller implements HasMiddleware
             'party_id' => ['required', 'integer', 'exists:parties,id'],
             'sales_person_id' => ['nullable', 'integer', 'exists:users,id'],
             'order_date' => ['required', 'date'],
+            'delivery_start_date' => ['nullable', 'date'],
             'delivery_date' => ['nullable', 'date', 'after_or_equal:order_date'],
             'buyer_reference' => ['nullable', 'string', 'max:100'],
+            'buyer_name' => ['nullable', 'string', 'max:150'],
             'delivery_terms' => ['nullable', 'string', 'max:2000'],
             'note' => ['nullable', 'string', 'max:2000'],
             'discount' => ['nullable', 'numeric', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.item' => ['required', 'string', 'distinct'],
+            // The same product repeats across lines with different styles
+            // and colors, so no "distinct" rule here.
+            'items.*.item' => ['required', 'string'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.0001'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'items.*.style' => ['nullable', 'string', 'max:100'],
+            'items.*.color' => ['nullable', 'string', 'max:100'],
+            'items.*.length_per_unit' => ['nullable', 'numeric', 'min:0'],
+            'items.*.remarks' => ['nullable', 'string', 'max:255'],
         ]);
 
         if (! Party::whereKey($validated['party_id'])->where('is_customer', true)->exists()) {
@@ -278,6 +264,10 @@ class SalesOrderController extends Controller implements HasMiddleware
                 'quantity' => (float) $row['quantity'],
                 'unit_price' => (float) $row['unit_price'],
                 'subtotal' => round((float) $row['quantity'] * (float) $row['unit_price'], 2),
+                'style' => $row['style'] ?? null,
+                'color' => $row['color'] ?? null,
+                'length_per_unit' => isset($row['length_per_unit']) ? (float) $row['length_per_unit'] : null,
+                'remarks' => $row['remarks'] ?? null,
             ];
         }
 
@@ -291,16 +281,18 @@ class SalesOrderController extends Controller implements HasMiddleware
         return [$validated, $rows, $subtotal, $discount];
     }
 
-    protected function createItems(SalesOrder $order, array $rows): void
+    protected function headerAttributes(array $validated, ?SalesOrder $existing = null): array
     {
-        foreach ($rows as $row) {
-            $order->items()->create([
-                'product_id' => $row['product']->id,
-                'product_variant_id' => $row['variant']?->id,
-                'quantity' => $row['quantity'],
-                'unit_price' => $row['unit_price'],
-                'subtotal' => $row['subtotal'],
-            ]);
-        }
+        return [
+            'party_id' => $validated['party_id'],
+            'sales_person_id' => $this->resolveSalesPerson($validated, $existing),
+            'order_date' => $validated['order_date'],
+            'delivery_start_date' => $validated['delivery_start_date'] ?? null,
+            'delivery_date' => $validated['delivery_date'] ?? null,
+            'buyer_reference' => $validated['buyer_reference'] ?? null,
+            'buyer_name' => $validated['buyer_name'] ?? null,
+            'delivery_terms' => $validated['delivery_terms'] ?? null,
+            'note' => $validated['note'] ?? null,
+        ];
     }
 }

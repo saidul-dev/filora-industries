@@ -16,8 +16,11 @@
     <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6 mb-4">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div class="text-sm">
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Buyer') }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Customer') }}</span>
                 <span class="font-semibold text-slate-800">{{ $order->party->name }}</span>
+                @if ($order->buyer_name)
+                    <span class="block text-xs text-slate-500">{{ __('Buyer / Brand') }}: {{ $order->buyer_name }}</span>
+                @endif
             </div>
             <x-status-badge size="lg" :label="$order->status_label" :color="\App\Models\SalesOrder::STATUS_COLORS[$order->status] ?? 'slate'" />
         </div>
@@ -28,15 +31,15 @@
                 <span class="block text-slate-700">{{ $order->order_date->format('d M, Y') }}</span>
             </div>
             <div>
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Requested Delivery') }}</span>
-                <span class="block text-slate-700">{{ $order->delivery_date?->format('d M, Y') ?? '—' }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Delivery Window') }}</span>
+                <span class="block text-slate-700">{{ $order->delivery_start_date?->format('d M, Y') ?? '—' }} → {{ $order->delivery_date?->format('d M, Y') ?? '—' }}</span>
             </div>
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Sales Person') }}</span>
                 <span class="block text-slate-700">{{ $order->salesPerson->name ?? '—' }}</span>
             </div>
             <div>
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Buyer Reference') }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Customer Order No.') }}</span>
                 <span class="block text-slate-700">{{ $order->buyer_reference ?: '—' }}</span>
             </div>
             <div>
@@ -133,44 +136,53 @@
 
     <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
         <div class="overflow-x-auto">
-        <table class="w-full min-w-[760px] text-sm">
+        <table class="w-full min-w-[1000px] text-sm">
             <thead>
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th class="px-5 py-3 font-semibold">{{ __('Product') }}</th>
-                    <th class="px-5 py-3 font-semibold">{{ __('Type') }}</th>
-                    <th class="px-5 py-3 font-semibold text-right">{{ __('Quantity') }}</th>
-                    <th class="px-5 py-3 font-semibold text-right">{{ __('Unit Price') }}</th>
-                    <th class="px-5 py-3 font-semibold text-right">{{ __('Subtotal') }}</th>
+                    <th class="px-4 py-3 font-semibold">{{ __('Style') }}</th>
+                    <th class="px-4 py-3 font-semibold">{{ __('Product') }}</th>
+                    <th class="px-4 py-3 font-semibold">{{ __('Color') }}</th>
+                    <th class="px-4 py-3 font-semibold text-right">{{ __('Quantity') }}</th>
+                    <th class="px-4 py-3 font-semibold text-right">{{ __('Length / Unit (m)') }}</th>
+                    <th class="px-4 py-3 font-semibold text-right">{{ __('Unit Price (USD)') }}</th>
+                    <th class="px-4 py-3 font-semibold text-right">{{ __('Subtotal (USD)') }}</th>
+                    <th class="px-4 py-3 font-semibold">{{ __('Remarks') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
                 @foreach ($order->items as $item)
                 <tr class="hover:bg-slate-50">
-                    <td class="px-5 py-3">
+                    <td class="px-4 py-3 font-semibold text-slate-800">{{ $item->style ?: '—' }}</td>
+                    <td class="px-4 py-3">
                         <span class="block font-semibold text-slate-800">{{ $item->product->name }}{{ $item->productVariant ? ' — '.$item->productVariant->label : '' }}</span>
-                        <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
+                        <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }} · {{ __(\App\Models\Product::TYPES[$item->product->product_type] ?? '—') }}</span>
                     </td>
-                    <td class="px-5 py-3 text-slate-600">{{ __(\App\Models\Product::TYPES[$item->product->product_type] ?? '—') }}</td>
-                    <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ rtrim(rtrim(number_format($item->quantity, 4), '0'), '.') }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
-                    <td class="px-5 py-3 text-right text-slate-600">{{ number_format($item->unit_price, 2) }}</td>
-                    <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ number_format($item->subtotal, 2) }}</td>
+                    <td class="px-4 py-3 text-slate-600">{{ $item->color ?: '—' }}</td>
+                    <td class="px-4 py-3 text-right font-semibold text-slate-800">{{ rtrim(rtrim(number_format($item->quantity, 4), '0'), '.') }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
+                    <td class="px-4 py-3 text-right text-slate-600">{{ $item->length_per_unit !== null ? rtrim(rtrim(number_format($item->length_per_unit, 2), '0'), '.') : '—' }}</td>
+                    <td class="px-4 py-3 text-right text-slate-600">{{ number_format($item->unit_price, 4) }}</td>
+                    <td class="px-4 py-3 text-right font-semibold text-slate-800">{{ number_format($item->subtotal, 2) }}</td>
+                    <td class="px-4 py-3 text-slate-600">{{ $item->remarks ?: '' }}</td>
                 </tr>
                 @endforeach
             </tbody>
             <tfoot class="border-t border-slate-200 bg-slate-50">
                 <tr>
-                    <td colspan="4" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Subtotal') }}</td>
-                    <td class="px-5 py-2 text-right font-semibold text-slate-800">{{ number_format($order->subtotal_amount, 2) }}</td>
+                    <td colspan="6" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Subtotal') }}</td>
+                    <td class="px-4 py-2 text-right font-semibold text-slate-800">{{ number_format($order->subtotal_amount, 2) }}</td>
+                    <td></td>
                 </tr>
                 @if ((float) $order->discount_amount > 0)
                 <tr>
-                    <td colspan="4" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Discount') }}</td>
-                    <td class="px-5 py-2 text-right text-slate-600">− {{ number_format($order->discount_amount, 2) }}</td>
+                    <td colspan="6" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Discount') }}</td>
+                    <td class="px-4 py-2 text-right text-slate-600">− {{ number_format($order->discount_amount, 2) }}</td>
+                    <td></td>
                 </tr>
                 @endif
                 <tr>
-                    <td colspan="4" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total') }}</td>
-                    <td class="px-5 py-2 text-right text-base font-bold text-brand-900">{{ number_format($order->total_amount, 2) }}</td>
+                    <td colspan="6" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total') }}</td>
+                    <td class="px-4 py-2 text-right text-base font-bold text-brand-900">USD {{ number_format($order->total_amount, 2) }}</td>
+                    <td></td>
                 </tr>
             </tfoot>
         </table>

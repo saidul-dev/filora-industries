@@ -130,4 +130,55 @@ class SalesOrderTest extends TestCase
         $this->actingAs($admin)->post(route('sales-orders.cancel', $order));
         $this->assertSame('cancelled', $order->fresh()->status);
     }
+
+    public function test_same_product_can_appear_on_several_lines_with_style_and_color(): void
+    {
+        $thread = $this->makeProduct('manufactured', ['name' => '100% Spun Polyester, 50/2']);
+
+        $this->actingAs($this->admin())->post(route('sales-orders.store'), $this->payload([
+            'discount' => 0,
+            'items' => [
+                ['item' => "product-{$thread->id}", 'quantity' => 65, 'unit_price' => 0.22, 'style' => 'TS472302', 'color' => '0160', 'length_per_unit' => 2000, 'remarks' => 'Rush'],
+                ['item' => "product-{$thread->id}", 'quantity' => 65, 'unit_price' => 0.22, 'style' => 'TS472302', 'color' => '0298', 'length_per_unit' => 2000],
+            ],
+        ]))->assertSessionHasNoErrors();
+
+        $items = SalesOrder::first()->items()->orderBy('id')->get();
+        $this->assertCount(2, $items);
+        $this->assertSame(['0160', '0298'], $items->pluck('color')->all());
+        $this->assertSame('TS472302', $items[0]->style);
+        $this->assertEquals(2000, (float) $items[0]->length_per_unit);
+        $this->assertSame('Rush', $items[0]->remarks);
+        $this->assertNull($items[1]->remarks);
+    }
+
+    public function test_unit_price_keeps_four_decimals_and_totals_round_per_line(): void
+    {
+        $thread = $this->makeProduct('manufactured');
+
+        $this->actingAs($this->admin())->post(route('sales-orders.store'), $this->payload([
+            'discount' => 0,
+            'items' => [
+                ['item' => "product-{$thread->id}", 'quantity' => 65, 'unit_price' => 0.2186],
+                ['item' => "product-{$thread->id}", 'quantity' => 51, 'unit_price' => 0.2192],
+            ],
+        ]))->assertSessionHasNoErrors();
+
+        $order = SalesOrder::with('items')->first();
+        $this->assertSame('0.2186', $order->items->first()->unit_price);
+        $this->assertEquals(14.21, (float) $order->items->first()->subtotal);
+        $this->assertEquals(25.39, (float) $order->total_amount);
+    }
+
+    public function test_buyer_name_and_delivery_start_date_are_saved(): void
+    {
+        $this->actingAs($this->admin())->post(route('sales-orders.store'), $this->payload([
+            'buyer_name' => 'BHPC & HENRY COTTON',
+            'delivery_start_date' => '2026-10-20',
+        ]))->assertSessionHasNoErrors();
+
+        $order = SalesOrder::first();
+        $this->assertSame('BHPC & HENRY COTTON', $order->buyer_name);
+        $this->assertSame('2026-10-20', $order->delivery_start_date->toDateString());
+    }
 }
