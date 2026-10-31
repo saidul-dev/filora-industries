@@ -55,8 +55,8 @@
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-5 py-3 font-semibold">{{ __('Product') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Quantity') }}</th>
-                    <th class="px-5 py-3 font-semibold text-right">{{ __('Unit Price') }}</th>
-                    <th class="px-5 py-3 font-semibold text-right">{{ __('Value') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Unit Price (USD)') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Value (USD)') }}</th>
                     @can('accounts.view')
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Unit Cost') }}</th>
                     @endcan
@@ -68,9 +68,12 @@
                     <td class="px-5 py-3">
                         <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
                         <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
+                        @if ($item->proformaInvoiceItem?->lineDetails())
+                            <span class="block text-xs text-slate-600">{{ $item->proformaInvoiceItem->lineDetails() }}</span>
+                        @endif
                     </td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ $qty($item->quantity) }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
-                    <td class="px-5 py-3 text-right text-slate-600">{{ number_format($item->unit_price, 2) }}</td>
+                    <td class="px-5 py-3 text-right text-slate-600">{{ number_format($item->unit_price, 4) }}</td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ number_format((float) $item->quantity * (float) $item->unit_price, 2) }}</td>
                     @can('accounts.view')
                     <td class="px-5 py-3 text-right text-slate-600">{{ number_format($item->unit_cost, 2) }}</td>
@@ -80,7 +83,14 @@
             </tbody>
             <tfoot class="border-t border-slate-200 bg-slate-50">
                 <tr>
-                    <td colspan="3" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Delivered Value') }}</td>
+                    <td colspan="3" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Delivered Value (USD)') }}</td>
+                    <td class="px-5 py-2 text-right font-semibold text-slate-800">{{ number_format($delivery->sale_amount_usd, 2) }}</td>
+                    @can('accounts.view')
+                    <td></td>
+                    @endcan
+                </tr>
+                <tr>
+                    <td colspan="3" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Billed in BDT') }} @ {{ rtrim(rtrim(number_format($delivery->usd_rate, 4), '0'), '.') }}</td>
                     <td class="px-5 py-2 text-right text-base font-bold text-brand-900">{{ number_format($delivery->sale_amount, 2) }}</td>
                     @can('accounts.view')
                     <td class="px-5 py-2 text-right text-xs text-slate-500">{{ __('Cost') }} {{ number_format($delivery->cost_amount, 2) }}</td>

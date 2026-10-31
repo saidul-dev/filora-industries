@@ -66,6 +66,9 @@
                             <td class="px-5 py-3">
                                 <span class="block font-semibold text-slate-800">{{ $line->item->label() }}</span>
                                 <span class="block text-xs text-slate-400">{{ $line->item->productVariant->sku ?? $line->item->product->sku }}</span>
+                                @if ($line->item->lineDetails())
+                                    <span class="block text-xs text-slate-600">{{ $line->item->lineDetails() }}</span>
+                                @endif
                             </td>
                             <td class="px-5 py-3 text-right text-slate-600">{{ $qty($line->item->quantity) }} {{ $line->item->product->stockUnit->short_name ?? '' }}</td>
                             <td class="px-5 py-3 text-right font-semibold text-amber-600">{{ $qty($line->remaining) }}</td>
@@ -91,6 +94,13 @@
                         <x-input-label for="delivery_date" :value="__('Delivery Date')" />
                         <x-text-input id="delivery_date" name="delivery_date" type="date" class="mt-1 block w-full" :value="old('delivery_date', now()->toDateString())" required />
                         <x-input-error class="mt-2" :messages="$errors->get('delivery_date')" />
+                    </div>
+                    <div>
+                        <x-input-label for="usd_rate" :value="__('USD Rate (BDT per 1 USD)')" />
+                        <x-text-input id="usd_rate" name="usd_rate" type="number" step="0.0001" min="0.0001" class="mt-1 block w-full"
+                                      :value="old('usd_rate', $usdRate)" required />
+                        <p class="mt-1 text-xs text-slate-400">{{ __('PI prices are in USD; the ledger is posted in BDT at this rate.') }}</p>
+                        <x-input-error class="mt-2" :messages="$errors->get('usd_rate')" />
                     </div>
                     <div>
                         <x-input-label for="vehicle_no" :value="__('Vehicle No. (optional)')" />

@@ -90,15 +90,19 @@ class DeliveryController extends Controller implements HasMiddleware
             ])->values()
             : collect();
 
-        return view('admin.deliveries.create', compact('invoices', 'invoice', 'sites', 'site', 'lines'));
+        // Sales are priced in USD; offer the rate the last delivery used.
+        $usdRate = Delivery::latest('id')->value('usd_rate');
+
+        return view('admin.deliveries.create', compact('invoices', 'invoice', 'sites', 'site', 'lines', 'usdRate'));
     }
 
     /**
      * Posts, atomically: one `sale` stock movement per line at the Site,
      * the PI lines' delivered quantities, and one ledger voucher for the
      * challan — Dr Accounts Receivable / Cr Sales Revenue at the PI price
-     * (net of the PI's discount, pro rata) and Dr Cost of Goods Sold /
-     * Cr Inventory at the goods' current average cost.
+     * (net of the PI's discount, pro rata), converted from USD to BDT at
+     * the challan's usd_rate, and Dr Cost of Goods Sold / Cr Inventory at
+     * the goods' current average cost (already BDT).
      */
     public function store(Request $request)
     {
@@ -106,6 +110,7 @@ class DeliveryController extends Controller implements HasMiddleware
             'proforma_invoice_id' => ['required', 'integer', 'exists:proforma_invoices,id'],
             'site_id' => ['required', 'integer', 'exists:sites,id'],
             'delivery_date' => ['required', 'date'],
+            'usd_rate' => ['required', 'numeric', 'gt:0'],
             'vehicle_no' => ['nullable', 'string', 'max:50'],
             'receiver_name' => ['nullable', 'string', 'max:150'],
             'note' => ['nullable', 'string', 'max:1000'],
@@ -167,6 +172,7 @@ class DeliveryController extends Controller implements HasMiddleware
                 'proforma_invoice_id' => $invoice->id,
                 'site_id' => $validated['site_id'],
                 'delivery_date' => $validated['delivery_date'],
+                'usd_rate' => $validated['usd_rate'],
                 'vehicle_no' => $validated['vehicle_no'] ?? null,
                 'receiver_name' => $validated['receiver_name'] ?? null,
                 'note' => $validated['note'] ?? null,
@@ -209,9 +215,10 @@ class DeliveryController extends Controller implements HasMiddleware
                 $costAmount += round($row['quantity'] * $row['unit_cost'], 2);
             }
 
-            $saleAmount = round($saleAmount, 2);
+            $saleAmountUsd = round($saleAmount, 2);
+            $saleAmount = round($saleAmountUsd * (float) $validated['usd_rate'], 2);
             $costAmount = round($costAmount, 2);
-            $delivery->update(['sale_amount' => $saleAmount, 'cost_amount' => $costAmount]);
+            $delivery->update(['sale_amount_usd' => $saleAmountUsd, 'sale_amount' => $saleAmount, 'cost_amount' => $costAmount]);
 
             $ledgerLines = [];
 
@@ -230,7 +237,7 @@ class DeliveryController extends Controller implements HasMiddleware
                     'type' => 'sale',
                     'date' => $validated['delivery_date'],
                     'site_id' => $validated['site_id'],
-                    'narration' => "Delivery {$delivery->delivery_no} against {$invoice->pi_no} to {$invoice->party->name}",
+                    'narration' => "Delivery {$delivery->delivery_no} against {$invoice->pi_no} to {$invoice->party->name} (USD {$saleAmountUsd} @ {$validated['usd_rate']})",
                     'reference' => $delivery,
                     'created_by' => Auth::id(),
                     'lines' => $ledgerLines,
@@ -248,7 +255,7 @@ class DeliveryController extends Controller implements HasMiddleware
 
     public function show(Delivery $delivery)
     {
-        $delivery->load(['proformaInvoice.party', 'site', 'creator', 'items.product.stockUnit', 'items.productVariant.attributeValues', 'ledgerTransaction.lines.account']);
+        $delivery->load(['proformaInvoice.party', 'site', 'creator', 'items.product.stockUnit', 'items.productVariant.attributeValues', 'items.proformaInvoiceItem', 'ledgerTransaction.lines.account']);
 
         abort_unless($delivery->proformaInvoice->isVisibleTo(Auth::user()), 403);
 
@@ -257,7 +264,7 @@ class DeliveryController extends Controller implements HasMiddleware
 
     public function print(Delivery $delivery)
     {
-        $delivery->load(['proformaInvoice.party', 'proformaInvoice.salesOrder', 'site', 'creator', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
+        $delivery->load(['proformaInvoice.party', 'proformaInvoice.salesOrder', 'site', 'creator', 'items.product.stockUnit', 'items.productVariant.attributeValues', 'items.proformaInvoiceItem']);
 
         abort_unless($delivery->proformaInvoice->isVisibleTo(Auth::user()), 403);
 

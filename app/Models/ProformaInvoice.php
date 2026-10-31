@@ -151,9 +151,22 @@ class ProformaInvoice extends Model
         return (float) $this->collections()->sum('amount');
     }
 
+    /**
+     * What has actually been billed so far, in BDT — the deliveries' sale
+     * amounts after USD conversion. The PI total itself is in USD.
+     */
+    public function billedAmount(): float
+    {
+        return (float) $this->deliveries()->sum('sale_amount');
+    }
+
+    /**
+     * BDT still owed: billed less collected. Negative while collections run
+     * ahead of deliveries (an advance).
+     */
     public function dueAmount(): float
     {
-        return round((float) $this->total_amount - $this->collectedAmount(), 2);
+        return round($this->billedAmount() - $this->collectedAmount(), 2);
     }
 
     public function scopeVisibleTo(Builder $query, User $user): Builder

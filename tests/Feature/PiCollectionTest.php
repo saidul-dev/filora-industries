@@ -56,7 +56,9 @@ class PiCollectionTest extends TestCase
         $collection = Collection::first();
         $this->assertSame($this->invoice->id, $collection->proforma_invoice_id);
         $this->assertEquals(2000, $this->invoice->collectedAmount());
-        $this->assertEquals(3000, $this->invoice->dueAmount());
+        // Due is billed (delivered, in BDT) less collected — nothing is
+        // delivered yet, so the collection stands as an advance.
+        $this->assertEquals(-2000, $this->invoice->dueAmount());
         $this->assertEquals(2000, $cash->balance());
         $this->assertEquals(-2000, $this->customer->receivableBalance()); // an advance until goods are delivered
 

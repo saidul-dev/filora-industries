@@ -56,7 +56,7 @@ class DeliveryTest extends TestCase
         ]);
     }
 
-    private function deliver(Site $site, array $quantities): \Illuminate\Testing\TestResponse
+    private function deliver(Site $site, array $quantities, float $usdRate = 1): \Illuminate\Testing\TestResponse
     {
         $items = [];
         foreach ($quantities as $productId => $quantity) {
@@ -67,6 +67,7 @@ class DeliveryTest extends TestCase
             'proforma_invoice_id' => $this->invoice->id,
             'site_id' => $site->id,
             'delivery_date' => now()->toDateString(),
+            'usd_rate' => $usdRate,
             'vehicle_no' => 'DHAKA-METRO-TA-11-2233',
             'items' => $items,
         ]);
@@ -141,6 +142,38 @@ class DeliveryTest extends TestCase
 
         $this->actingAs($this->admin)->post(route('proforma-invoices.cancel', $this->invoice));
         $this->deliver($this->factory, [$this->zipper->id => 1])->assertSessionHasErrors('proforma_invoice_id');
+        $this->assertSame(0, Delivery::count());
+    }
+
+    public function test_delivery_posts_receivable_in_bdt_using_usd_rate(): void
+    {
+        // 400 labels × USD 3 = USD 1,200 → at 122 BDT/USD = BDT 146,400.
+        $this->deliver($this->office, [$this->label->id => 400], 122)->assertSessionHasNoErrors();
+
+        $delivery = Delivery::first();
+        $this->assertSame('122.0000', $delivery->usd_rate);
+        $this->assertEquals(1200, (float) $delivery->sale_amount_usd);
+        $this->assertEquals(146400, (float) $delivery->sale_amount);
+        $this->assertEquals(146400, $this->customer->receivableBalance());
+        $this->assertEquals(146400, LedgerAccount::where('code', 'sales_revenue')->first()->balance());
+        // Cost of goods stays in BDT, unconverted: 400 × 1.5.
+        $this->assertEquals(600, LedgerAccount::where('code', 'cost_of_goods_sold')->first()->balance());
+
+        // PI due is what was billed in BDT less what was collected.
+        $this->assertEquals(146400, $this->invoice->refresh()->billedAmount());
+        $this->assertEquals(146400, $this->invoice->dueAmount());
+
+        $this->actingAs($this->admin)->get(route('deliveries.show', $delivery))->assertOk()->assertSee('146,400.00');
+
+        // The next delivery's form offers the last rate used.
+        $this->actingAs($this->admin)
+            ->get(route('deliveries.create', ['proforma_invoice_id' => $this->invoice->id, 'site_id' => $this->factory->id]))
+            ->assertOk()->assertSee('value="122.0000"', false);
+    }
+
+    public function test_delivery_requires_a_positive_usd_rate(): void
+    {
+        $this->deliver($this->factory, [$this->zipper->id => 10], 0)->assertSessionHasErrors('usd_rate');
         $this->assertSame(0, Delivery::count());
     }
 }

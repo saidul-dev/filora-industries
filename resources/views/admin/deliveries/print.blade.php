@@ -63,6 +63,9 @@
                     <td class="py-2 pr-2">
                         <span class="font-semibold text-slate-800">{{ $item->label() }}</span>
                         <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
+                        @if ($item->proformaInvoiceItem?->lineDetails())
+                            <span class="block text-xs text-slate-600">{{ $item->proformaInvoiceItem->lineDetails() }}</span>
+                        @endif
                     </td>
                     <td class="py-2 pl-2 text-right font-semibold text-slate-800">{{ rtrim(rtrim(number_format($item->quantity, 4), '0'), '.') }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
                 </tr>

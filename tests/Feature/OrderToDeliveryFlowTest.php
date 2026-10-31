@@ -136,11 +136,11 @@ class OrderToDeliveryFlowTest extends TestCase
         $this->actingAs($admin)->post(route('proforma-invoices.ready', $pi));
         $bagPiLine = $pi->items()->where('product_id', $polyBag->id)->first();
         $this->actingAs($admin)->post(route('deliveries.store'), [
-            'proforma_invoice_id' => $pi->id, 'site_id' => $factory->id, 'delivery_date' => now()->toDateString(),
+            'proforma_invoice_id' => $pi->id, 'site_id' => $factory->id, 'delivery_date' => now()->toDateString(), 'usd_rate' => 1,
             'items' => [$zipperLine->id => ['quantity' => 1000]],
         ])->assertSessionHasNoErrors();
         $this->actingAs($admin)->post(route('deliveries.store'), [
-            'proforma_invoice_id' => $pi->id, 'site_id' => $office->id, 'delivery_date' => now()->toDateString(),
+            'proforma_invoice_id' => $pi->id, 'site_id' => $office->id, 'delivery_date' => now()->toDateString(), 'usd_rate' => 1,
             'items' => [$bagPiLine->id => ['quantity' => 1000]],
         ])->assertSessionHasNoErrors();
         $this->assertSame('delivered', $pi->refresh()->status);

@@ -235,7 +235,9 @@
     @php
         $collected = (float) $invoice->collections->sum('amount');
         $deliveredValue = (float) $invoice->deliveries->sum('sale_amount');
-        $due = round((float) $invoice->total_amount - $collected, 2);
+        // PI total is USD; billing happens per delivery in BDT, so due is
+        // delivered (billed) value less collections — see ProformaInvoice::dueAmount().
+        $due = round($deliveredValue - $collected, 2);
     @endphp
     <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6 mb-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -254,15 +256,15 @@
 
         <div class="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100">
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('PI Total') }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('PI Total (USD)') }}</span>
                 <span class="mt-1 block text-lg font-bold text-slate-800">{{ number_format($invoice->total_amount, 2) }}</span>
             </div>
             <div class="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100">
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Delivered Value') }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Billed (BDT)') }}</span>
                 <span class="mt-1 block text-lg font-bold text-slate-800">{{ number_format($deliveredValue, 2) }}</span>
             </div>
             <div class="rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-600">{{ __('Collected') }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-600">{{ __('Collected (BDT)') }}</span>
                 <span class="mt-1 block text-lg font-bold text-emerald-700">{{ number_format($collected, 2) }}</span>
             </div>
             <div class="rounded-xl p-4 ring-1 {{ $due > 0 ? 'bg-amber-50 ring-amber-100' : 'bg-slate-50 ring-slate-100' }}">
