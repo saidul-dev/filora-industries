@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Models\SalesOrder;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -40,6 +41,32 @@ trait WritesSalesOrders
 
             return $order;
         });
+    }
+
+    /**
+     * A Sales Person always enters orders as themselves; anyone else may
+     * pick one, or it stays as it was (or themselves, if a Sales Person).
+     */
+    protected function resolveSalesPerson(array $validated, ?SalesOrder $existing = null): ?int
+    {
+        $user = Auth::user();
+
+        if ($user->seesOnlyOwnSales()) {
+            return $existing?->sales_person_id ?? $user->id;
+        }
+
+        if (! empty($validated['sales_person_id'])) {
+            return (int) $validated['sales_person_id'];
+        }
+
+        return $existing?->sales_person_id ?? ($user->hasRole('Sales Person') ? $user->id : null);
+    }
+
+    protected function salesPersonOptions()
+    {
+        return Auth::user()->seesOnlyOwnSales()
+            ? collect()
+            : User::role('Sales Person')->where('is_active', true)->orderBy('name')->get(['id', 'name']);
     }
 
     protected function createItems(SalesOrder $order, array $rows): void

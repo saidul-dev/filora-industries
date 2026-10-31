@@ -213,6 +213,10 @@ class SheetParser
                 break;
             }
 
+            if ($description === null) {
+                throw new SheetParseException("Row {$row}: item description is missing.");
+            }
+
             $quantity = $this->number($cell('quantity'));
             $price = $this->number($cell('unit_price'));
 

@@ -37,6 +37,7 @@ use App\Http\Controllers\Admin\ProjectController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SalaryStructureController;
 use App\Http\Controllers\Admin\SalesOrderController;
+use App\Http\Controllers\Admin\SalesOrderImportController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\SiteHealthController;
 use App\Http\Controllers\Admin\SiteController;
@@ -104,6 +105,13 @@ Route::prefix('admin')->group(function () {
 
         // Order-to-delivery cycle (docs/order-to-delivery.md): Sales Order
         // → Proforma Invoice → Requisition/Purchase/Production → Delivery.
+        // Excel import first, so "import" isn't taken for a {salesOrder} id.
+        Route::get('/sales-orders/import', [SalesOrderImportController::class, 'create'])->name('sales-orders.import');
+        Route::post('/sales-orders/import', [SalesOrderImportController::class, 'upload'])->name('sales-orders.import.upload');
+        Route::get('/sales-orders/import/{token}', [SalesOrderImportController::class, 'preview'])->name('sales-orders.import.preview');
+        Route::post('/sales-orders/import/{token}/customer', [SalesOrderImportController::class, 'createCustomer'])->name('sales-orders.import.customer');
+        Route::post('/sales-orders/import/{token}/product', [SalesOrderImportController::class, 'createProduct'])->name('sales-orders.import.product');
+        Route::post('/sales-orders/import/{token}', [SalesOrderImportController::class, 'store'])->name('sales-orders.import.store');
         Route::resource('sales-orders', SalesOrderController::class)->parameters(['sales-orders' => 'salesOrder']);
         Route::post('/sales-orders/{salesOrder}/confirm', [SalesOrderController::class, 'confirm'])->name('sales-orders.confirm');
         Route::post('/sales-orders/{salesOrder}/cancel', [SalesOrderController::class, 'cancel'])->name('sales-orders.cancel');

@@ -7,7 +7,6 @@ use App\Http\Controllers\Concerns\WritesSalesOrders;
 use App\Http\Controllers\Controller;
 use App\Models\Party;
 use App\Models\SalesOrder;
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -185,37 +184,18 @@ class SalesOrderController extends Controller implements HasMiddleware
 
     protected function formOptions(): array
     {
-        $user = Auth::user();
-
         return [
             'customers' => $this->customers(),
             'itemOptions' => $this->productOptions(['manufactured', 'direct_purchase']),
             // Only someone who sees every order picks the responsible Sales
             // Person — a Sales Person always enters orders as themselves.
-            'salesPeople' => $user->seesOnlyOwnSales()
-                ? collect()
-                : User::role('Sales Person')->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'salesPeople' => $this->salesPersonOptions(),
         ];
     }
 
     protected function customers()
     {
         return Party::where('is_customer', true)->where('status', true)->orderBy('name')->get(['id', 'name']);
-    }
-
-    protected function resolveSalesPerson(array $validated, ?SalesOrder $existing = null): ?int
-    {
-        $user = Auth::user();
-
-        if ($user->seesOnlyOwnSales()) {
-            return $existing?->sales_person_id ?? $user->id;
-        }
-
-        if (! empty($validated['sales_person_id'])) {
-            return (int) $validated['sales_person_id'];
-        }
-
-        return $existing?->sales_person_id ?? ($user->hasRole('Sales Person') ? $user->id : null);
     }
 
     /**
