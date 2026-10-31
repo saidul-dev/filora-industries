@@ -56,9 +56,41 @@ Pending → Confirmed → PI Generated (or Cancelled). Freely editable while
 Pending (quantities, add/remove lines); `sales.approve` confirms. No stock
 or ledger effect.
 
+**Always priced in USD** (no currency field; the company currency in
+Settings stays BDT for everything else). Each line carries **Style,
+Color, Length/Unit (m) and Remarks**; color is information only (no
+variants or per-color stock/price). The same product can appear on many
+lines. Unit prices keep 4 decimals; each line total is
+`round(qty × price, 2)`. The header has the **Buyer / Brand** (the end
+brand, e.g. BHPC & HENRY COTTON — not a Party), the customer's order
+number (`buyer_reference`) and a delivery window
+(`delivery_start_date` → `delivery_date`).
+
+### Excel import (`SalesOrderImportController`, `sales.create`)
+
+Sales Orders → Import from Excel. Upload a customer order sheet
+(`.xlsx`/`.xls`, first worksheet, one order). `SheetParser` finds header
+values by label (Customer Name, Buyer Name, Order Number, Booking / Delivery
+Start / Delivery Close Date, From, CC, email, Contact, "Product:") and the
+line table by its "Sl. No" heading row; prices are read at full precision
+(sheets show $0.22 but hold ~0.2186), dates as Excel dates or day-first
+text (`5/10/2026` = 5 Oct). A line whose sheet total differs from qty ×
+price by more than 0.01 is flagged.
+
+The preview (parsed sheet kept in the session under a one-time token)
+auto-matches the customer and each Item Description (`RecordMatcher`:
+normalised name — case, punctuation, Ltd/Limited ignored — then
+`import_aliases`). Unmatched ones are picked from a list, or created in one
+click (customer from the sheet's header; product as a manufactured
+"Sewing Thread" item in Cones, SKU `THR-0001`). A manual pick saves the
+sheet's spelling as an alias, so the next sheet matches on its own. A
+customer order number already used for that customer shows a warning.
+"Create Sales Order" makes a normal pending order.
+
 ## Proforma Invoice (`proforma_invoices`, `ProformaInvoiceController`)
 
-Generated from a confirmed SO as a **Draft**: lines copied, each with a
+Generated from a confirmed SO as a **Draft**: lines copied (with style,
+color, length and remarks; prices in USD, "In Words" in US Dollar), each with a
 planned `fulfillment` — `stock` if enough is on hand across all sites,
 else `production` (manufactured) or `purchase`. The draft can be edited
 (the PI is the *final* list to deliver), then **Issued** (locked).
@@ -129,7 +161,10 @@ site. Each challan posts one `sale` movement per line and one `sale`
 ledger voucher:
 
 - **Dr Accounts Receivable (buyer) / Cr Sales Revenue** at the PI price
-  net of the PI discount (pro rata);
+  net of the PI discount (pro rata), **converted from USD to BDT at the
+  challan's USD rate** (`usd_rate`, required, prefilled from the last
+  delivery). `sale_amount_usd` keeps the USD figure, `sale_amount` the BDT
+  figure that is posted;
 - **Dr Cost of Goods Sold / Cr Inventory** at average cost.
 
 Then the PI becomes Partially Delivered or Delivered. Printable challan.
@@ -138,9 +173,11 @@ Then the PI becomes Partially Delivered or Delivered. Printable challan.
 
 `collections.proforma_invoice_id` (nullable). Recording a Collection from
 the PI page (or picking the PI on the Collection form) still posts **Dr
-Cash/Bank / Cr Accounts Receivable**; the PI shows total, delivered value,
-collected and due. Collections before delivery are an advance (negative
-receivable) until the delivery's receivable offsets them.
+Cash/Bank / Cr Accounts Receivable**, entered in BDT. The PI shows its
+USD total, the BDT billed so far (its deliveries' `sale_amount`), collected
+and due — `ProformaInvoice::dueAmount()` = billed − collected, both BDT.
+Collections before delivery are an advance (negative receivable / due)
+until the delivery's receivable offsets them.
 
 ## Inventory views
 
