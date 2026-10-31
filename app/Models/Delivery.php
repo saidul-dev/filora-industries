@@ -18,6 +18,8 @@ class Delivery extends Model
         'proforma_invoice_id',
         'site_id',
         'delivery_date',
+        'usd_rate',
+        'sale_amount_usd',
         'sale_amount',
         'cost_amount',
         'vehicle_no',
@@ -28,6 +30,8 @@ class Delivery extends Model
 
     protected $casts = [
         'delivery_date' => 'date',
+        'usd_rate' => 'decimal:4',
+        'sale_amount_usd' => 'decimal:2',
         'sale_amount' => 'decimal:2',
         'cost_amount' => 'decimal:2',
     ];

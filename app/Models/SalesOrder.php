@@ -35,8 +35,10 @@ class SalesOrder extends Model
         'party_id',
         'sales_person_id',
         'order_date',
+        'delivery_start_date',
         'delivery_date',
         'buyer_reference',
+        'buyer_name',
         'delivery_terms',
         'note',
         'status',
@@ -50,6 +52,7 @@ class SalesOrder extends Model
 
     protected $casts = [
         'order_date' => 'date',
+        'delivery_start_date' => 'date',
         'delivery_date' => 'date',
         'confirmed_at' => 'datetime',
         'subtotal_amount' => 'decimal:2',

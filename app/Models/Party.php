@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\LedgerService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Party extends Model
 {
@@ -132,5 +133,13 @@ class Party extends Model
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Spellings of this record seen on imported order sheets.
+     */
+    public function aliases(): MorphMany
+    {
+        return $this->morphMany(ImportAlias::class, 'aliasable');
     }
 }

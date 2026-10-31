@@ -21,6 +21,10 @@ class ProformaInvoiceItem extends Model
         'proforma_invoice_id',
         'product_id',
         'product_variant_id',
+        'style',
+        'color',
+        'length_per_unit',
+        'remarks',
         'quantity',
         'unit_price',
         'subtotal',
@@ -30,7 +34,8 @@ class ProformaInvoiceItem extends Model
 
     protected $casts = [
         'quantity' => 'decimal:4',
-        'unit_price' => 'decimal:2',
+        'unit_price' => 'decimal:4',
+        'length_per_unit' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'delivered_quantity' => 'decimal:4',
     ];

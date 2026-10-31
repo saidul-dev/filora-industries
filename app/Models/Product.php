@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
@@ -152,5 +153,13 @@ class Product extends Model
     public function getTypeLabelAttribute(): string
     {
         return self::TYPES[$this->product_type] ?? $this->product_type;
+    }
+
+    /**
+     * Spellings of this record seen on imported order sheets.
+     */
+    public function aliases(): MorphMany
+    {
+        return $this->morphMany(ImportAlias::class, 'aliasable');
     }
 }
