@@ -27,7 +27,10 @@
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                    <x-input-label for="party_id" :value="__('Customer')" />
+                    <div class="flex items-center justify-between gap-2">
+                        <x-input-label for="party_id" :value="__('Customer')" />
+                        <x-quick-add-party role="customer" />
+                    </div>
                     <div class="mt-1">
                         <x-searchable-select name="party_id" :options="$customers" :selected="old('party_id', $order->party_id ?? null)"
                                               placeholder="{{ __('Select a customer…') }}" />
@@ -119,8 +122,8 @@
             <table class="w-full min-w-[1180px] text-sm">
                 <thead>
                     <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                        <th class="px-3 py-3 font-semibold w-32">{{ __('Style') }}</th>
                         <th class="px-3 py-3 font-semibold">{{ __('Product') }}</th>
+                        <th class="px-3 py-3 font-semibold w-32">{{ __('Style') }}</th>
                         <th class="px-3 py-3 font-semibold w-28">{{ __('Color') }}</th>
                         <th class="px-3 py-3 font-semibold w-28">{{ __('Quantity') }}</th>
                         <th class="px-3 py-3 font-semibold w-28">{{ __('Length / Unit (m)') }}</th>
@@ -134,13 +137,13 @@
                     <template x-for="(item, i) in items" :key="item.uid">
                         <tr class="hover:bg-slate-50">
                             <td class="px-3 py-3">
-                                <input type="text" maxlength="100" :name="'items[' + i + '][style]'" x-model="item.style"
-                                       class="w-28 rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500">
-                            </td>
-                            <td class="px-3 py-3">
                                 <input type="hidden" :name="'items[' + i + '][item]'" :value="item.id">
                                 <span class="font-semibold text-slate-800" x-text="item.name"></span>
                                 <span class="block text-xs text-slate-400" x-text="item.unit || ''"></span>
+                            </td>
+                            <td class="px-3 py-3">
+                                <input type="text" maxlength="100" :name="'items[' + i + '][style]'" x-model="item.style"
+                                       class="w-28 rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500">
                             </td>
                             <td class="px-3 py-3">
                                 <input type="text" maxlength="100" :name="'items[' + i + '][color]'" x-model="item.color"

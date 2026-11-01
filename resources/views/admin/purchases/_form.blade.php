@@ -39,7 +39,10 @@
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div x-show="vendorType === 'supplier'">
-                    <x-input-label for="party_id" :value="__('Supplier')" />
+                    <div class="flex items-center justify-between gap-2">
+                        <x-input-label for="party_id" :value="__('Supplier')" />
+                        <x-quick-add-party role="supplier" />
+                    </div>
                     <div class="mt-1">
                         <x-searchable-select name="party_id" :options="$suppliers" :selected="old('party_id', $purchase->party_id ?? null)"
                                               placeholder="{{ __('Select a supplier…') }}" />

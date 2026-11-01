@@ -16,7 +16,7 @@ class PartyController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('permission:parties.view', only: ['index', 'ledger']),
-            new Middleware('permission:parties.create', only: ['create', 'store']),
+            new Middleware('permission:parties.create', only: ['create', 'store', 'quickStore']),
             new Middleware('permission:parties.edit', only: ['edit', 'update', 'toggleStatus']),
             new Middleware('permission:parties.delete', only: ['destroy']),
         ];
@@ -56,6 +56,42 @@ class PartyController extends Controller implements HasMiddleware
         $party = Party::create($validated);
 
         return redirect()->route('parties.index')->with('success', "Party \"{$party->name}\" created.");
+    }
+
+    /**
+     * Minimal party created from inside an order form (sales order customer,
+     * purchase order supplier) without leaving the page. Answers JSON so the
+     * form can add and select it in place.
+     */
+    public function quickStore(Request $request)
+    {
+        $validated = $request->validate([
+            'role' => ['required', Rule::in(['customer', 'supplier'])],
+            'name' => ['required', 'string', 'max:255'],
+            'phone' => ['required', 'string', 'max:30'],
+            'contact_person' => ['nullable', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'address' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        if ($existing = Party::where('phone', $validated['phone'])->first()) {
+            throw ValidationException::withMessages([
+                'phone' => "{$existing->name} already uses this phone — pick that party from the list instead.",
+            ]);
+        }
+
+        $party = Party::create([
+            'name' => $validated['name'],
+            'phone' => $validated['phone'],
+            'contact_person' => $validated['contact_person'] ?? null,
+            'email' => $validated['email'] ?? null,
+            'address' => $validated['address'] ?? null,
+            'is_customer' => $validated['role'] === 'customer',
+            'is_supplier' => $validated['role'] === 'supplier',
+            'status' => true,
+        ]);
+
+        return response()->json(['id' => (string) $party->id, 'name' => $party->name], 201);
     }
 
     public function edit(Party $party)

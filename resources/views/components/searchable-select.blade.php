@@ -55,7 +55,12 @@
             this.$nextTick(() => this.$refs.hiddenInput.form.submit());
             @endif
         },
-    }" {{ $attributes->merge(['class' => 'relative']) }} @keydown.escape="open = false">
+        add(opt) {
+            this.options = [...this.options, opt].sort((a, b) => a.name.localeCompare(b.name));
+            this.select(opt);
+        },
+    }" {{ $attributes->merge(['class' => 'relative']) }} @keydown.escape="open = false"
+    @searchable-select-add.window="$event.detail.name === @js($name) && add($event.detail.option)">
     <input type="hidden" name="{{ $name }}" x-ref="hiddenInput" :value="selectedId">
 
     <button type="button" x-ref="trigger" @click="toggle()"

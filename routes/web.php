@@ -168,6 +168,7 @@ Route::prefix('admin')->group(function () {
         Route::post('/stock/transfers/{transfer}/receive', [StockTransferController::class, 'receive'])->name('stock.transfers.receive');
         Route::post('/stock/transfers/{transfer}/cancel', [StockTransferController::class, 'cancel'])->name('stock.transfers.cancel');
 
+        Route::post('/parties/quick', [PartyController::class, 'quickStore'])->name('parties.quick-store');
         Route::resource('parties', PartyController::class)->except('show');
         Route::patch('/parties/{party}/toggle-status', [PartyController::class, 'toggleStatus'])->name('parties.toggle-status');
         Route::get('/parties/{party}/ledger', [PartyController::class, 'ledger'])->name('parties.ledger');
