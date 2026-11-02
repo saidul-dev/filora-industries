@@ -96,7 +96,7 @@
                 <div class="flex flex-wrap items-end justify-between gap-4 px-6 pt-5 pb-4">
                     <div>
                         <h3 class="font-bold text-brand-900">{{ __('Lines & Prices') }}</h3>
-                        <p class="text-xs text-slate-400">{{ __('Prices come from the order where it has one — change any of them here. The Sales Order itself is left as it was.') }}</p>
+                        <p class="text-xs text-slate-400">{{ __('Prices come from the order where it has one — change any of them here. The Sales Order itself is left as it was. Goods already delivered against an order are carried onto the PI when it is issued.') }}</p>
                     </div>
                     <span x-show="unpriced" x-cloak class="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700"
                           x-text="unpriced + ' ' + (unpriced === 1 ? @js(__('line still needs a price')) : @js(__('lines still need a price')))"></span>
@@ -137,7 +137,10 @@
                                         </td>
                                         <td class="px-2 py-2.5 text-slate-600" x-text="line.style || '—'"></td>
                                         <td class="px-2 py-2.5 text-slate-600" x-text="line.color || '—'"></td>
-                                        <td class="px-2 py-2.5 text-right tabular-nums text-slate-700" x-text="line.quantity + ' ' + (line.unit || '')"></td>
+                                        <td class="px-2 py-2.5 text-right tabular-nums text-slate-700">
+                                            <span x-text="line.quantity + ' ' + (line.unit || '')"></span>
+                                            <span x-show="line.delivered > 0" class="block text-xs text-teal-600" x-text="line.delivered + ' ' + @js(__('already delivered'))"></span>
+                                        </td>
                                         <td class="px-2 py-2">
                                             <input type="number" step="0.0001" min="0" required :name="'prices[' + line.line_id + ']'" x-model="line.unit_price"
                                                    class="block w-full rounded-md py-1.5 text-sm focus:border-accent-500 focus:ring-accent-500"

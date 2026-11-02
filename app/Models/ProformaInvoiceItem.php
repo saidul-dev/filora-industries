@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\DescribesOrderLine;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ProformaInvoiceItem extends Model
 {
+    use DescribesOrderLine;
+
     /**
      * Planned fulfillment path per PI line — a single PI can mix all three.
      */
@@ -19,6 +22,7 @@ class ProformaInvoiceItem extends Model
 
     protected $fillable = [
         'proforma_invoice_id',
+        'sales_order_item_id',
         'product_id',
         'product_variant_id',
         'style',
@@ -81,28 +85,12 @@ class ProformaInvoiceItem extends Model
         return max(round(min($this->remaining(), (float) $this->quantity - $covered), 4), 0);
     }
 
-    public function remaining(): float
-    {
-        return max(round((float) $this->quantity - (float) $this->delivered_quantity, 4), 0);
-    }
-
     /**
-     * "Style TS472302 · Color 0160 · 2000 m · Rush" — the thread details
-     * that tell apart lines of the same product. Empty when there are none.
+     * The Sales Order line this PI line was generated from, if any.
      */
-    public function lineDetails(): string
+    public function salesOrderItem(): BelongsTo
     {
-        return collect([
-            $this->style ? "Style {$this->style}" : null,
-            $this->color ? "Color {$this->color}" : null,
-            $this->length_per_unit !== null ? rtrim(rtrim(number_format((float) $this->length_per_unit, 2), '0'), '.').' m' : null,
-            $this->remarks,
-        ])->filter()->implode(' · ');
-    }
-
-    public function label(): string
-    {
-        return $this->product->name.($this->productVariant ? ' — '.$this->productVariant->label : '');
+        return $this->belongsTo(SalesOrderItem::class);
     }
 
     public function getFulfillmentLabelAttribute(): string

@@ -4,16 +4,16 @@
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-brand-900">{{ $delivery->delivery_no }}</h2>
-                <p class="text-sm text-slate-500 mt-0.5">{{ __('Delivery Challan against :pi', ['pi' => $delivery->proformaInvoice->pi_no]) }}</p>
+                <p class="text-sm text-slate-500 mt-0.5">{{ __('Delivery Challan against :pi', ['pi' => $delivery->sourceNo()]) }}</p>
             </div>
             <div class="flex gap-2">
                 <a href="{{ route('deliveries.print', $delivery) }}" target="_blank"
                    class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
                     {{ __('Print Challan') }}
                 </a>
-                <a href="{{ route('proforma-invoices.show', $delivery->proformaInvoice) }}"
+                <a href="{{ $delivery->sourceUrl() }}"
                    class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-                    {{ __('Back to PI') }}
+                    {{ $delivery->proformaInvoice ? __('Back to PI') : __('Back to Sales Order') }}
                 </a>
             </div>
         </div>
@@ -25,7 +25,10 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Buyer') }}</span>
-                <span class="block font-semibold text-slate-800">{{ $delivery->proformaInvoice->party->name }}</span>
+                <span class="block font-semibold text-slate-800">{{ $delivery->party()->name }}</span>
+                @if ($delivery->proformaInvoice && $delivery->salesOrder)
+                    <span class="block text-xs text-slate-400">{{ __('Delivered against :so, now on :pi', ['so' => $delivery->salesOrder->order_no, 'pi' => $delivery->proformaInvoice->pi_no]) }}</span>
+                @endif
             </div>
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Delivered From') }}</span>
@@ -68,8 +71,8 @@
                     <td class="px-5 py-3">
                         <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
                         <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
-                        @if ($item->proformaInvoiceItem?->lineDetails())
-                            <span class="block text-xs text-slate-600">{{ $item->proformaInvoiceItem->lineDetails() }}</span>
+                        @if ($item->lineDetails())
+                            <span class="block text-xs text-slate-600">{{ $item->lineDetails() }}</span>
                         @endif
                     </td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ $qty($item->quantity) }} {{ $item->product->stockUnit->short_name ?? '' }}</td>

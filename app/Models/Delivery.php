@@ -9,13 +9,15 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 /**
- * Delivery Challan against a Proforma Invoice — see DeliveryController.
+ * Delivery Challan against a Proforma Invoice, or straight against a
+ * confirmed Sales Order — see DeliveryController.
  */
 class Delivery extends Model
 {
     protected $fillable = [
         'delivery_no',
         'proforma_invoice_id',
+        'sales_order_id',
         'site_id',
         'delivery_date',
         'usd_rate',
@@ -39,6 +41,46 @@ class Delivery extends Model
     public function proformaInvoice(): BelongsTo
     {
         return $this->belongsTo(ProformaInvoice::class);
+    }
+
+    /**
+     * Set when the challan went out straight against the order. It keeps
+     * this link after a PI covering the order picks the challan up.
+     */
+    public function salesOrder(): BelongsTo
+    {
+        return $this->belongsTo(SalesOrder::class);
+    }
+
+    /**
+     * The document the challan was delivered against: its PI if it has
+     * one, otherwise the Sales Order.
+     */
+    public function source(): ProformaInvoice|SalesOrder
+    {
+        return $this->proformaInvoice ?? $this->salesOrder;
+    }
+
+    public function sourceNo(): string
+    {
+        return $this->proformaInvoice?->pi_no ?? $this->salesOrder->order_no;
+    }
+
+    public function sourceUrl(): string
+    {
+        return $this->proformaInvoice
+            ? route('proforma-invoices.show', $this->proformaInvoice)
+            : route('sales-orders.show', $this->salesOrder);
+    }
+
+    public function party(): Party
+    {
+        return $this->source()->party;
+    }
+
+    public function isVisibleTo(User $user): bool
+    {
+        return $this->source()->isVisibleTo($user);
     }
 
     public function site(): BelongsTo

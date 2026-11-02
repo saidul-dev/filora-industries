@@ -83,6 +83,7 @@ class SalesOrderController extends Controller implements HasMiddleware
         $salesOrder->load([
             'party', 'salesPerson', 'creator', 'confirmedBy', 'proformaInvoices',
             'items.product.stockUnit', 'items.productVariant.attributeValues',
+            'deliveries' => fn ($q) => $q->with(['site', 'proformaInvoice'])->withCount('items')->latest('id'),
         ]);
 
         return view('admin.sales-orders.show', ['order' => $salesOrder]);

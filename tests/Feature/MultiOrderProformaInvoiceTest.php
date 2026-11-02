@@ -61,7 +61,7 @@ class MultiOrderProformaInvoiceTest extends TestCase
         $this->assertEquals(12.5, (float) $order->total_amount);
         $this->assertTrue($order->hasUnpricedLines());
 
-        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()->assertSee('Price to be set on PI');
+        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()->assertSee('No price yet');
     }
 
     public function test_one_pi_is_generated_from_several_orders_with_prices_set_on_the_pi(): void

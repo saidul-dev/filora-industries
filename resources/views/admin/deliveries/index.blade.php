@@ -39,7 +39,7 @@
             <thead>
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-5 py-3 font-semibold">{{ __('Challan') }}</th>
-                    <th class="px-5 py-3 font-semibold">{{ __('Proforma Invoice') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Against') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('From') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Items') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Value') }}</th>
@@ -54,8 +54,8 @@
                         <span class="block text-xs text-slate-400">{{ $delivery->delivery_date->format('d M, Y') }}</span>
                     </td>
                     <td class="px-5 py-3 text-slate-600">
-                        {{ $delivery->proformaInvoice->pi_no }}
-                        <span class="block text-xs text-slate-400">{{ $delivery->proformaInvoice->party->name }}</span>
+                        {{ $delivery->sourceNo() }}
+                        <span class="block text-xs text-slate-400">{{ $delivery->party()->name }}</span>
                     </td>
                     <td class="px-5 py-3 text-slate-600">{{ $delivery->site->name }}</td>
                     <td class="px-5 py-3 text-right text-slate-600">{{ $delivery->items_count }}</td>

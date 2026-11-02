@@ -11,6 +11,7 @@
         $cartItems = collect(old('items', []))
             ->map(fn ($row) => ($opt = $itemOptions->firstWhere('id', $row['item'] ?? null))
                 ? array_merge($opt, [
+                    'sales_order_item' => $row['sales_order_item'] ?? null,
                     'quantity' => $row['quantity'] ?? '',
                     'unit_price' => $row['unit_price'] ?? '',
                     'fulfillment' => $row['fulfillment'] ?? 'stock',
@@ -88,6 +89,7 @@
                             <tr class="hover:bg-slate-50 align-top">
                                 <td class="px-5 py-3">
                                     <input type="hidden" :name="'items[' + i + '][item]'" :value="item.id">
+                                    <input type="hidden" :name="'items[' + i + '][sales_order_item]'" :value="item.sales_order_item ?? ''">
                                     <span class="font-semibold text-slate-800" x-text="item.name"></span>
                                     <span class="block text-xs text-slate-400" x-text="item.unit || ''"></span>
                                     <div class="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">

@@ -25,21 +25,29 @@
             'documentDate' => $delivery->delivery_date,
         ])
 
-        @php $invoice = $delivery->proformaInvoice; @endphp
+        @php
+            $invoice = $delivery->proformaInvoice;
+            $party = $delivery->party();
+            $orders = $invoice ? $invoice->salesOrders : collect([$delivery->salesOrder]);
+        @endphp
         <div class="mt-6 grid grid-cols-2 gap-6 text-sm">
             <div>
                 <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Deliver To') }}</p>
-                <p class="font-semibold text-slate-800">{{ $invoice->party->name }}</p>
-                @if ($invoice->party->phone)<p class="text-slate-600">{{ $invoice->party->phone }}</p>@endif
-                @if ($invoice->party->address)<p class="text-slate-500">{{ $invoice->party->address }}</p>@endif
+                <p class="font-semibold text-slate-800">{{ $party->name }}</p>
+                @if ($party->phone)<p class="text-slate-600">{{ $party->phone }}</p>@endif
+                @if ($party->address)<p class="text-slate-500">{{ $party->address }}</p>@endif
             </div>
             <div class="text-right space-y-0.5">
+                @if ($invoice)
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('PI No.') }}:</span> {{ $invoice->pi_no }}</p>
-                @php $buyerRefs = $invoice->salesOrders->pluck('buyer_reference')->filter(); @endphp
+                @else
+                <p class="text-slate-600"><span class="text-slate-400">{{ __('Order No.') }}:</span> {{ $delivery->salesOrder->order_no }}</p>
+                @endif
+                @php $buyerRefs = $orders->pluck('buyer_reference')->filter(); @endphp
                 @if ($buyerRefs->isNotEmpty())
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('Buyer Ref.') }}:</span> {{ $buyerRefs->implode(', ') }}</p>
                 @endif
-                @if ($invoice->hasLc())
+                @if ($invoice?->hasLc())
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('LC No.') }}:</span> {{ $invoice->lc_no }}</p>
                 @endif
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('Dispatched From') }}:</span> {{ $delivery->site->name }}</p>
@@ -64,8 +72,8 @@
                     <td class="py-2 pr-2">
                         <span class="font-semibold text-slate-800">{{ $item->label() }}</span>
                         <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
-                        @if ($item->proformaInvoiceItem?->lineDetails())
-                            <span class="block text-xs text-slate-600">{{ $item->proformaInvoiceItem->lineDetails() }}</span>
+                        @if ($item->lineDetails())
+                            <span class="block text-xs text-slate-600">{{ $item->lineDetails() }}</span>
                         @endif
                     </td>
                     <td class="py-2 pl-2 text-right font-semibold text-slate-800">{{ rtrim(rtrim(number_format($item->quantity, 4), '0'), '.') }} {{ $item->product->stockUnit->short_name ?? '' }}</td>

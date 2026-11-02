@@ -11,14 +11,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class SalesOrder extends Model
 {
     /**
-     * Pending → Confirmed → PI Generated, with Cancelled as the only other
-     * exit. Only a Pending order is editable (quantities, add/remove
-     * lines); from PI Generated on, the Proforma Invoice's own status
-     * carries the order forward.
+     * Pending → Confirmed, then either straight to delivery (Partially
+     * Delivered → Delivered) or onto a Proforma Invoice (PI Generated) —
+     * a PI can also be raised after goods already went out. Cancelled is
+     * the exit before anything happened. Only a Pending order is editable;
+     * once on a PI, the PI's own status carries the order forward.
      */
     public const STATUSES = [
         'pending' => 'Pending',
         'confirmed' => 'Confirmed',
+        'partially_delivered' => 'Partially Delivered',
+        'delivered' => 'Delivered',
         'pi_generated' => 'PI Generated',
         'cancelled' => 'Cancelled',
     ];
@@ -26,9 +29,17 @@ class SalesOrder extends Model
     public const STATUS_COLORS = [
         'pending' => 'amber',
         'confirmed' => 'sky',
+        'partially_delivered' => 'indigo',
+        'delivered' => 'teal',
         'pi_generated' => 'emerald',
         'cancelled' => 'rose',
     ];
+
+    /**
+     * Confirmed orders not on a live PI — these can be delivered against
+     * directly, or put on a new PI.
+     */
+    public const OPEN_STATUSES = ['confirmed', 'partially_delivered', 'delivered'];
 
     protected $fillable = [
         'order_no',
@@ -101,6 +112,53 @@ class SalesOrder extends Model
             ->where('status', '!=', 'cancelled')
             ->sortByDesc('id')
             ->first();
+    }
+
+    /**
+     * Challans posted straight against this order (before any PI). When a
+     * PI covering the order is issued they move onto that PI too.
+     */
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(Delivery::class);
+    }
+
+    /**
+     * Goods can go out straight against the order while it is confirmed
+     * and not on a live PI — afterwards they go out against the PI.
+     */
+    public function canDeliverDirectly(): bool
+    {
+        return in_array($this->status, ['confirmed', 'partially_delivered'], true);
+    }
+
+    /**
+     * Back to the status the order's deliveries and PIs say it should have
+     * — after a direct delivery, or when a PI covering it is cancelled.
+     */
+    public function recalculateStatus(): void
+    {
+        $this->load(['items', 'proformaInvoices']);
+
+        $status = match (true) {
+            $this->liveProformaInvoice() !== null => 'pi_generated',
+            $this->items->every(fn (SalesOrderItem $item) => $item->remaining() <= 0) => 'delivered',
+            $this->items->contains(fn (SalesOrderItem $item) => (float) $item->delivered_quantity > 0) => 'partially_delivered',
+            default => 'confirmed',
+        };
+
+        $this->update(['status' => $status]);
+    }
+
+    /**
+     * Order-wide discount as a fraction of the priced subtotal — applied
+     * pro rata to directly delivered lines, as a PI does.
+     */
+    public function discountRate(): float
+    {
+        $subtotal = (float) $this->subtotal_amount;
+
+        return $subtotal > 0 ? (float) $this->discount_amount / $subtotal : 0.0;
     }
 
     /**

@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\DescribesOrderLine;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SalesOrderItem extends Model
 {
+    use DescribesOrderLine;
+
     protected $fillable = [
         'sales_order_id',
         'product_id',
@@ -18,6 +21,7 @@ class SalesOrderItem extends Model
         'quantity',
         'unit_price',
         'subtotal',
+        'delivered_quantity',
     ];
 
     protected $casts = [
@@ -25,6 +29,7 @@ class SalesOrderItem extends Model
         'unit_price' => 'decimal:4',
         'length_per_unit' => 'decimal:2',
         'subtotal' => 'decimal:2',
+        'delivered_quantity' => 'decimal:4',
     ];
 
     public function salesOrder(): BelongsTo

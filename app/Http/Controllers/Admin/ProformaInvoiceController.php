@@ -6,10 +6,13 @@ use App\Http\Controllers\Concerns\PicksProducts;
 use App\Http\Controllers\Controller;
 use App\Models\BomItem;
 use App\Models\CompanySetting;
+use App\Models\Delivery;
+use App\Models\DeliveryItem;
 use App\Models\Party;
 use App\Models\ProformaInvoice;
 use App\Models\ProformaInvoiceItem;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderItem;
 use App\Models\StockMovement;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -73,7 +76,9 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
         $user = Auth::user();
         $partyId = $request->filled('party_id') ? $request->integer('party_id') : null;
 
-        $confirmed = SalesOrder::where('status', 'confirmed')->visibleTo($user);
+        // Confirmed orders not on a live PI — including ones already
+        // (partly) delivered directly, whose challans the PI picks up.
+        $confirmed = SalesOrder::whereIn('status', SalesOrder::OPEN_STATUSES)->visibleTo($user);
 
         $customers = Party::whereIn('id', (clone $confirmed)->select('party_id'))->orderBy('name')->get(['id', 'name']);
 
@@ -96,6 +101,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                 'style' => $item->style,
                 'color' => $item->color,
                 'quantity' => (float) $item->quantity,
+                'delivered' => (float) $item->delivered_quantity,
                 'unit_price' => $item->unit_price !== null ? (float) $item->unit_price : '',
             ]))->values(),
         ])->values();
@@ -110,7 +116,9 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
 
     /**
      * Generate one draft PI from one or more confirmed Sales Orders of the
-     * same customer. Every order line is copied across at the price given
+     * same customer. Every order line is copied across in full — anything
+     * already delivered straight against the order shows as delivered, and
+     * its challans move onto the PI when it is issued — at the price given
      * here (falling back to the order's own price), with a planned
      * fulfillment path — from existing stock when enough is on hand across
      * all Sites, otherwise production for a Manufactured product and a
@@ -136,7 +144,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
 
         $orders = SalesOrder::whereIn('id', $validated['sales_order_ids'])
             ->where('party_id', $validated['party_id'])
-            ->where('status', 'confirmed')
+            ->whereIn('status', SalesOrder::OPEN_STATUSES)
             ->visibleTo(Auth::user())
             ->with('items.product')
             ->orderBy('id')
@@ -201,6 +209,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                 $onHand = $this->stockBalance($item->product_id, $item->product_variant_id);
 
                 $invoice->items()->create([
+                    'sales_order_item_id' => $item->id,
                     'product_id' => $item->product_id,
                     'product_variant_id' => $item->product_variant_id,
                     'style' => $item->style,
@@ -210,9 +219,10 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                     'quantity' => $item->quantity,
                     'unit_price' => $price,
                     'subtotal' => round((float) $item->quantity * $price, 2),
-                    'fulfillment' => $onHand >= (float) $item->quantity
+                    'fulfillment' => $item->remaining() <= 0 || $onHand >= $item->remaining()
                         ? 'stock'
                         : ProformaInvoiceItem::defaultFulfillmentFor($item->product),
+                    'delivered_quantity' => $item->delivered_quantity,
                 ]);
             }
 
@@ -264,6 +274,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
         $proformaInvoice->load(['party', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
 
         $items = $proformaInvoice->items->map(fn ($item) => $this->itemRow($item, [
+            'sales_order_item' => $item->sales_order_item_id,
             'quantity' => (float) $item->quantity,
             'unit_price' => (float) $item->unit_price,
             'fulfillment' => $item->fulfillment,
@@ -284,6 +295,8 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
     /**
      * Draft only — so no requisition, production order or delivery can be
      * referencing these lines yet, and replacing them wholesale is safe.
+     * Each line keeps the order line it came from, and with it whatever was
+     * already delivered straight against that order line.
      */
     public function update(Request $request, ProformaInvoice $proformaInvoice)
     {
@@ -303,6 +316,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
             'items' => ['required', 'array', 'min:1'],
             // Same product may repeat across style/color lines — no "distinct".
             'items.*.item' => ['required', 'string'],
+            'items.*.sales_order_item' => ['nullable', 'integer'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.0001'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
             'items.*.fulfillment' => ['required', Rule::in(array_keys(ProformaInvoiceItem::FULFILLMENTS))],
@@ -312,6 +326,9 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
             'items.*.remarks' => ['nullable', 'string', 'max:255'],
         ]);
 
+        $orderItems = SalesOrderItem::whereIn('sales_order_id', $proformaInvoice->salesOrders()->select('sales_orders.id'))
+            ->get()->keyBy('id');
+
         $rows = [];
         foreach ($validated['items'] as $i => $row) {
             [$product, $variant] = $this->resolveItem($row['item']);
@@ -320,11 +337,18 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                 throw ValidationException::withMessages(["items.{$i}.item" => 'Pick a valid product or variant.']);
             }
 
+            $orderItem = isset($row['sales_order_item']) ? $orderItems->get((int) $row['sales_order_item']) : null;
+
+            if ($orderItem && (float) $row['quantity'] < (float) $orderItem->delivered_quantity) {
+                throw ValidationException::withMessages(["items.{$i}.quantity" => "{$product->name}: {$orderItem->delivered_quantity} was already delivered on this order line — the PI can't ask for less."]);
+            }
+
             if ($row['fulfillment'] === 'production' && ! $product->isManufactured()) {
                 throw ValidationException::withMessages(["items.{$i}.fulfillment" => "{$product->name} is not a Manufactured product — it can't be fulfilled by factory production."]);
             }
 
             $rows[] = [
+                'order_item' => $orderItem,
                 'product' => $product,
                 'variant' => $variant,
                 'quantity' => (float) $row['quantity'],
@@ -361,6 +385,8 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
 
             foreach ($rows as $row) {
                 $proformaInvoice->items()->create([
+                    'sales_order_item_id' => $row['order_item']?->id,
+                    'delivered_quantity' => $row['order_item']->delivered_quantity ?? 0,
                     'product_id' => $row['product']->id,
                     'product_variant_id' => $row['variant']?->id,
                     'style' => $row['style'],
@@ -378,13 +404,43 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
         return redirect()->route('proforma-invoices.show', $proformaInvoice)->with('success', "Proforma Invoice {$proformaInvoice->pi_no} updated.");
     }
 
+    /**
+     * Locks the PI. Challans that already went out straight against its
+     * Sales Orders move onto it, so its billed / collected / due figures
+     * cover them, and its status reflects what is already delivered.
+     */
     public function issue(ProformaInvoice $proformaInvoice)
     {
         if (! $proformaInvoice->isEditable()) {
             return back()->with('error', 'Only a draft Proforma Invoice can be issued.');
         }
 
-        $proformaInvoice->update(['status' => 'issued', 'issued_at' => now()]);
+        $proformaInvoice->load(['items', 'salesOrders.items']);
+        $piLines = $proformaInvoice->items->whereNotNull('sales_order_item_id')->keyBy('sales_order_item_id');
+
+        foreach ($proformaInvoice->salesOrders as $order) {
+            foreach ($order->items as $orderItem) {
+                if ((float) $orderItem->delivered_quantity > 0 && ! $piLines->has($orderItem->id)) {
+                    return back()->with('error', "{$order->order_no} has a delivered line ({$orderItem->label()}) that is no longer on this PI — add it back before issuing.");
+                }
+            }
+        }
+
+        DB::transaction(function () use ($proformaInvoice, $piLines) {
+            foreach ($piLines as $orderItemId => $line) {
+                DeliveryItem::where('sales_order_item_id', $orderItemId)->whereNull('proforma_invoice_item_id')
+                    ->update(['proforma_invoice_item_id' => $line->id]);
+            }
+
+            Delivery::whereIn('sales_order_id', $proformaInvoice->salesOrders->pluck('id'))->whereNull('proforma_invoice_id')
+                ->update(['proforma_invoice_id' => $proformaInvoice->id]);
+
+            $proformaInvoice->update(['status' => 'issued', 'issued_at' => now()]);
+
+            if ($proformaInvoice->items->contains(fn ($item) => (float) $item->delivered_quantity > 0)) {
+                $proformaInvoice->recalculateDeliveryStatus();
+            }
+        });
 
         return back()->with('success', "Proforma Invoice {$proformaInvoice->pi_no} issued to {$proformaInvoice->party->name}.");
     }
@@ -462,19 +518,21 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
 
     /**
      * Only before anything has been done against it — once goods are being
-     * sourced, produced or delivered the PI has to run its course. The
-     * Sales Orders go back to Confirmed so a corrected PI can be generated.
+     * sourced, produced or delivered the PI has to run its course (that
+     * includes challans it picked up from its orders on issue). The Sales
+     * Orders go back to where their own deliveries leave them, so a
+     * corrected PI can be generated.
      */
     public function cancel(ProformaInvoice $proformaInvoice)
     {
-        if (! in_array($proformaInvoice->status, ['draft', 'issued', 'lc_issued'], true)) {
+        if (! in_array($proformaInvoice->status, ['draft', 'issued', 'lc_issued'], true) || $proformaInvoice->deliveries()->exists()) {
             return back()->with('error', 'This Proforma Invoice already has procurement, production or delivery against it and cannot be cancelled.');
         }
 
         DB::transaction(function () use ($proformaInvoice) {
             $proformaInvoice->update(['status' => 'cancelled']);
 
-            $proformaInvoice->salesOrders()->where('status', 'pi_generated')->update(['sales_orders.status' => 'confirmed']);
+            $proformaInvoice->salesOrders->each(fn (SalesOrder $order) => $order->recalculateStatus());
         });
 
         return back()->with('success', "{$proformaInvoice->pi_no} cancelled.");

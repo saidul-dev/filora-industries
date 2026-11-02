@@ -10,6 +10,7 @@ class DeliveryItem extends Model
     protected $fillable = [
         'delivery_id',
         'proforma_invoice_item_id',
+        'sales_order_item_id',
         'product_id',
         'product_variant_id',
         'quantity',
@@ -31,6 +32,19 @@ class DeliveryItem extends Model
     public function proformaInvoiceItem(): BelongsTo
     {
         return $this->belongsTo(ProformaInvoiceItem::class);
+    }
+
+    public function salesOrderItem(): BelongsTo
+    {
+        return $this->belongsTo(SalesOrderItem::class);
+    }
+
+    /**
+     * Style/color/length details of the line this was delivered against.
+     */
+    public function lineDetails(): string
+    {
+        return ($this->proformaInvoiceItem ?? $this->salesOrderItem)?->lineDetails() ?? '';
     }
 
     public function product(): BelongsTo
