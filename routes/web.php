@@ -116,8 +116,7 @@ Route::prefix('admin')->group(function () {
         Route::post('/sales-orders/{salesOrder}/confirm', [SalesOrderController::class, 'confirm'])->name('sales-orders.confirm');
         Route::post('/sales-orders/{salesOrder}/cancel', [SalesOrderController::class, 'cancel'])->name('sales-orders.cancel');
 
-        Route::post('/sales-orders/{salesOrder}/proforma-invoice', [ProformaInvoiceController::class, 'store'])->name('proforma-invoices.store');
-        Route::resource('proforma-invoices', ProformaInvoiceController::class)->only(['index', 'show', 'edit', 'update'])
+        Route::resource('proforma-invoices', ProformaInvoiceController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update'])
             ->parameters(['proforma-invoices' => 'proformaInvoice']);
         Route::post('/proforma-invoices/{proformaInvoice}/issue', [ProformaInvoiceController::class, 'issue'])->name('proforma-invoices.issue');
         Route::post('/proforma-invoices/{proformaInvoice}/lc', [ProformaInvoiceController::class, 'attachLc'])->name('proforma-invoices.lc');

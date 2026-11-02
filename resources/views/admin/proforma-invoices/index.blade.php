@@ -1,9 +1,18 @@
 <x-app-layout>
     <x-slot name="title">{{ __('Proforma Invoices') }}</x-slot>
     <x-slot name="header">
-        <div>
-            <h2 class="text-2xl font-bold text-brand-900">{{ __('Proforma Invoices') }}</h2>
-            <p class="text-sm text-slate-500 mt-0.5">{{ __('The controlling document for procurement, production, LC, delivery and payment.') }}</p>
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <h2 class="text-2xl font-bold text-brand-900">{{ __('Proforma Invoices') }}</h2>
+                <p class="text-sm text-slate-500 mt-0.5">{{ __('The controlling document for procurement, production, LC, delivery and payment.') }}</p>
+            </div>
+            @can('sales.approve')
+            <a href="{{ route('proforma-invoices.create') }}"
+               class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                {{ __('New Proforma Invoice') }}
+            </a>
+            @endcan
         </div>
     </x-slot>
 
@@ -42,7 +51,7 @@
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-5 py-3 font-semibold">{{ __('PI') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Buyer') }}</th>
-                    <th class="px-5 py-3 font-semibold">{{ __('Sales Order') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Sales Orders') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('LC') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Delivery By') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Total') }}</th>
@@ -58,7 +67,7 @@
                         <span class="block text-xs text-slate-400">{{ $invoice->pi_date->format('d M, Y') }}</span>
                     </td>
                     <td class="px-5 py-3 text-slate-600">{{ $invoice->party->name }}</td>
-                    <td class="px-5 py-3 text-slate-600">{{ $invoice->salesOrder->order_no ?? '—' }}</td>
+                    <td class="px-5 py-3 text-slate-600">{{ $invoice->salesOrders->pluck('order_no')->implode(', ') ?: '—' }}</td>
                     <td class="px-5 py-3 text-slate-600">
                         @if ($invoice->hasLc())
                             {{ $invoice->lc_no }}
@@ -78,7 +87,7 @@
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="8" class="px-5 py-10 text-center text-slate-400">{{ __('No Proforma Invoices yet — confirm a Sales Order and generate one from it.') }}</td>
+                    <td colspan="8" class="px-5 py-10 text-center text-slate-400">{{ __('No Proforma Invoices yet — confirm Sales Orders, then create a PI from one or more of them.') }}</td>
                 </tr>
                 @endforelse
             </tbody>

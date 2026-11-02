@@ -55,12 +55,12 @@
                 <span class="block text-slate-700">{{ $invoice->delivery_date?->format('d M, Y') ?? '—' }}</span>
             </div>
             <div>
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Sales Order') }}</span>
-                @if ($invoice->salesOrder)
-                    <a href="{{ route('sales-orders.show', $invoice->salesOrder) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $invoice->salesOrder->order_no }}</a>
-                @else
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ $invoice->salesOrders->count() > 1 ? __('Sales Orders') : __('Sales Order') }}</span>
+                @forelse ($invoice->salesOrders as $order)
+                    <a href="{{ route('sales-orders.show', $order) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $order->order_no }}</a>@if (! $loop->last)<span class="text-slate-400">, </span>@endif
+                @empty
                     <span class="block text-slate-700">—</span>
-                @endif
+                @endforelse
             </div>
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Sales Person') }}</span>

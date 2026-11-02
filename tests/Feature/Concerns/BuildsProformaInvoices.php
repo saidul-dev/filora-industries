@@ -32,7 +32,7 @@ trait BuildsProformaInvoices
 
         $order = \App\Models\SalesOrder::latest('id')->first();
         $this->actingAs($admin)->post(route('sales-orders.confirm', $order));
-        $this->actingAs($admin)->post(route('proforma-invoices.store', $order));
+        $this->actingAs($admin)->post(route('proforma-invoices.store'), $this->piPayload($order));
 
         $invoice = ProformaInvoice::latest('id')->first();
 

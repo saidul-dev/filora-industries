@@ -393,6 +393,63 @@ Alpine.data('piCart', (initial) => ({
     },
 }));
 
+// New Proforma Invoice — tick one or more confirmed Sales Orders of a
+// customer and price every line. Discount and delivery date follow the
+// ticked orders until the user types their own.
+Alpine.data('piBuilder', (initial) => ({
+    orders: (initial.orders || []).map((order) => ({
+        ...order,
+        lines: order.lines.map((line) => ({
+            ...line,
+            unit_price: initial.prices?.[line.line_id] ?? line.unit_price,
+        })),
+    })),
+    selected: initial.selected || [],
+    discount: initial.discount ?? '',
+    deliveryDate: initial.deliveryDate ?? '',
+    discountTouched: initial.discount !== null && initial.discount !== undefined,
+    deliveryTouched: !!initial.deliveryDate,
+
+    init() {
+        this.$watch('selected', () => this.syncDefaults());
+        this.syncDefaults();
+    },
+
+    get chosen() {
+        return this.orders.filter((o) => this.selected.includes(o.id));
+    },
+
+    get lineCount() {
+        return this.chosen.reduce((n, o) => n + o.lines.length, 0);
+    },
+
+    get unpriced() {
+        return this.chosen.reduce((n, o) => n + o.lines.filter((l) => l.unit_price === '' || l.unit_price === null).length, 0);
+    },
+
+    get subtotal() {
+        return this.chosen.reduce((sum, o) => sum + o.lines.reduce((s, l) => s + lineTotal(l), 0), 0);
+    },
+
+    get total() {
+        return Math.max(this.subtotal - (Number(this.discount) || 0), 0);
+    },
+
+    toggleAll() {
+        this.selected = this.selected.length === this.orders.length ? [] : this.orders.map((o) => o.id);
+    },
+
+    syncDefaults() {
+        if (!this.discountTouched) {
+            const sum = this.chosen.reduce((s, o) => s + (Number(o.discount) || 0), 0);
+            this.discount = sum > 0 ? sum.toFixed(2) : '';
+        }
+        if (!this.deliveryTouched) {
+            this.deliveryDate = this.chosen.map((o) => o.delivery_date).filter(Boolean).sort().pop() || '';
+        }
+    },
+}));
+
 // Bill of Materials editor — one row per raw material, quantity consumed
 // per ONE finished unit. Estimated cost is display-only (the real cost is
 // captured from stock at the moment a Production Order consumes it).

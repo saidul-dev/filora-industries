@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -53,7 +54,6 @@ class ProformaInvoice extends Model
 
     protected $fillable = [
         'pi_no',
-        'sales_order_id',
         'party_id',
         'sales_person_id',
         'pi_date',
@@ -93,9 +93,13 @@ class ProformaInvoice extends Model
         'lc_amount' => 'decimal:2',
     ];
 
-    public function salesOrder(): BelongsTo
+    /**
+     * The confirmed Sales Orders this PI was generated from — one or
+     * several, always for the same customer.
+     */
+    public function salesOrders(): BelongsToMany
     {
-        return $this->belongsTo(SalesOrder::class);
+        return $this->belongsToMany(SalesOrder::class)->withTimestamps()->orderBy('sales_orders.id');
     }
 
     public function party(): BelongsTo

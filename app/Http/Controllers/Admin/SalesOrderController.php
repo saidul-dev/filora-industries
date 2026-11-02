@@ -81,7 +81,7 @@ class SalesOrderController extends Controller implements HasMiddleware
         $this->authorizeVisible($salesOrder);
 
         $salesOrder->load([
-            'party', 'salesPerson', 'creator', 'confirmedBy', 'proformaInvoice',
+            'party', 'salesPerson', 'creator', 'confirmedBy', 'proformaInvoices',
             'items.product.stockUnit', 'items.productVariant.attributeValues',
         ]);
 
@@ -100,7 +100,7 @@ class SalesOrderController extends Controller implements HasMiddleware
 
         $items = $salesOrder->items->map(fn ($item) => $this->itemRow($item, [
             'quantity' => (float) $item->quantity,
-            'unit_price' => (float) $item->unit_price,
+            'unit_price' => $item->unit_price !== null ? (float) $item->unit_price : '',
             'style' => $item->style ?? '',
             'color' => $item->color ?? '',
             'length_per_unit' => $item->length_per_unit !== null ? (float) $item->length_per_unit : '',
@@ -219,7 +219,8 @@ class SalesOrderController extends Controller implements HasMiddleware
             // and colors, so no "distinct" rule here.
             'items.*.item' => ['required', 'string'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.0001'],
-            'items.*.unit_price' => ['required', 'numeric', 'min:0'],
+            // Optional — the price can be agreed later and set on the PI.
+            'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
             'items.*.style' => ['nullable', 'string', 'max:100'],
             'items.*.color' => ['nullable', 'string', 'max:100'],
             'items.*.length_per_unit' => ['nullable', 'numeric', 'min:0'],
@@ -242,8 +243,8 @@ class SalesOrderController extends Controller implements HasMiddleware
                 'product' => $product,
                 'variant' => $variant,
                 'quantity' => (float) $row['quantity'],
-                'unit_price' => (float) $row['unit_price'],
-                'subtotal' => round((float) $row['quantity'] * (float) $row['unit_price'], 2),
+                'unit_price' => isset($row['unit_price']) ? (float) $row['unit_price'] : null,
+                'subtotal' => round((float) $row['quantity'] * (float) ($row['unit_price'] ?? 0), 2),
                 'style' => $row['style'] ?? null,
                 'color' => $row['color'] ?? null,
                 'length_per_unit' => isset($row['length_per_unit']) ? (float) $row['length_per_unit'] : null,

@@ -5,6 +5,7 @@ namespace Tests\Feature\Concerns;
 use App\Models\Category;
 use App\Models\Party;
 use App\Models\Product;
+use App\Models\SalesOrder;
 use App\Models\Site;
 use App\Models\StockMovement;
 use App\Models\Unit;
@@ -97,5 +98,24 @@ trait CreatesInventoryFixtures
     protected function balance(Product $product, Site $site): float
     {
         return StockMovement::balanceFor($product->id, null, $site->id);
+    }
+
+    /**
+     * The "New Proforma Invoice" form as submitted for these confirmed
+     * orders, keeping the orders' own prices.
+     *
+     * @param  SalesOrder|array<SalesOrder>  $orders
+     */
+    protected function piPayload(SalesOrder|array $orders, array $overrides = []): array
+    {
+        $orders = collect(is_array($orders) ? $orders : [$orders]);
+
+        return array_merge([
+            'party_id' => $orders->first()->party_id,
+            'sales_order_ids' => $orders->pluck('id')->all(),
+            'pi_date' => now()->toDateString(),
+            'delivery_date' => $orders->max('delivery_date')?->toDateString(),
+            'terms' => $orders->pluck('delivery_terms')->filter()->first(),
+        ], $overrides);
     }
 }

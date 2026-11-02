@@ -34,11 +34,12 @@
                 @if ($invoice->party->address)<p class="text-slate-500">{{ $invoice->party->address }}</p>@endif
             </div>
             <div class="text-right space-y-0.5">
-                @if ($invoice->salesOrder)
-                <p class="text-slate-600"><span class="text-slate-400">{{ __('Order Ref.') }}:</span> {{ $invoice->salesOrder->order_no }}{{ $invoice->salesOrder->buyer_reference ? ' / '.$invoice->salesOrder->buyer_reference : '' }}</p>
-                @if ($invoice->salesOrder->buyer_name)
-                <p class="text-slate-600"><span class="text-slate-400">{{ __('Buyer') }}:</span> {{ $invoice->salesOrder->buyer_name }}</p>
-                @endif
+                @foreach ($invoice->salesOrders as $order)
+                <p class="text-slate-600"><span class="text-slate-400">{{ __('Order Ref.') }}:</span> {{ $order->order_no }}{{ $order->buyer_reference ? ' / '.$order->buyer_reference : '' }}</p>
+                @endforeach
+                @php $buyerNames = $invoice->salesOrders->pluck('buyer_name')->filter()->unique(); @endphp
+                @if ($buyerNames->isNotEmpty())
+                <p class="text-slate-600"><span class="text-slate-400">{{ __('Buyer') }}:</span> {{ $buyerNames->implode(', ') }}</p>
                 @endif
                 @if ($invoice->valid_until)
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('Valid Until') }}:</span> {{ $invoice->valid_until->format('d M, Y') }}</p>

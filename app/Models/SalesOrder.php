@@ -5,8 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class SalesOrder extends Model
 {
@@ -85,19 +85,30 @@ class SalesOrder extends Model
         return $this->belongsTo(User::class, 'confirmed_by');
     }
 
-    public function proformaInvoices(): HasMany
+    public function proformaInvoices(): BelongsToMany
     {
-        return $this->hasMany(ProformaInvoice::class);
+        return $this->belongsToMany(ProformaInvoice::class)->withTimestamps();
     }
 
     /**
-     * The live (non-cancelled) PI generated from this order, if any —
-     * cancelling a PI hands the order back to Confirmed so a corrected
-     * one can be generated.
+     * The live (non-cancelled) PI covering this order, if any — cancelling
+     * a PI hands its orders back to Confirmed so a corrected one can be
+     * generated.
      */
-    public function proformaInvoice(): HasOne
+    public function liveProformaInvoice(): ?ProformaInvoice
     {
-        return $this->hasOne(ProformaInvoice::class)->where('status', '!=', 'cancelled')->latestOfMany();
+        return $this->proformaInvoices
+            ->where('status', '!=', 'cancelled')
+            ->sortByDesc('id')
+            ->first();
+    }
+
+    /**
+     * Lines entered without a price — the price is then set on the PI.
+     */
+    public function hasUnpricedLines(): bool
+    {
+        return $this->items->contains(fn (SalesOrderItem $item) => $item->unit_price === null);
     }
 
     /**

@@ -35,8 +35,9 @@
             </div>
             <div class="text-right space-y-0.5">
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('PI No.') }}:</span> {{ $invoice->pi_no }}</p>
-                @if ($invoice->salesOrder?->buyer_reference)
-                <p class="text-slate-600"><span class="text-slate-400">{{ __('Buyer Ref.') }}:</span> {{ $invoice->salesOrder->buyer_reference }}</p>
+                @php $buyerRefs = $invoice->salesOrders->pluck('buyer_reference')->filter(); @endphp
+                @if ($buyerRefs->isNotEmpty())
+                <p class="text-slate-600"><span class="text-slate-400">{{ __('Buyer Ref.') }}:</span> {{ $buyerRefs->implode(', ') }}</p>
                 @endif
                 @if ($invoice->hasLc())
                 <p class="text-slate-600"><span class="text-slate-400">{{ __('LC No.') }}:</span> {{ $invoice->lc_no }}</p>

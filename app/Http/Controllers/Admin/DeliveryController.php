@@ -264,7 +264,7 @@ class DeliveryController extends Controller implements HasMiddleware
 
     public function print(Delivery $delivery)
     {
-        $delivery->load(['proformaInvoice.party', 'proformaInvoice.salesOrder', 'site', 'creator', 'items.product.stockUnit', 'items.productVariant.attributeValues', 'items.proformaInvoiceItem']);
+        $delivery->load(['proformaInvoice.party', 'proformaInvoice.salesOrders', 'site', 'creator', 'items.product.stockUnit', 'items.productVariant.attributeValues', 'items.proformaInvoiceItem']);
 
         abort_unless($delivery->proformaInvoice->isVisibleTo(Auth::user()), 403);
 

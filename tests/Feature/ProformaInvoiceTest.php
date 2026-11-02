@@ -59,7 +59,7 @@ class ProformaInvoiceTest extends TestCase
     {
         $order = $this->confirmedOrder();
 
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $order))->assertRedirect();
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($order))->assertRedirect();
 
         $invoice = ProformaInvoice::with('items.product')->first();
         $this->assertSame('PI-000001', $invoice->pi_no);
@@ -74,7 +74,7 @@ class ProformaInvoiceTest extends TestCase
         $this->assertSame('stock', $plan['direct_purchase-200']);
 
         // A second PI can't be generated from the same order.
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $order));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($order));
         $this->assertSame(1, ProformaInvoice::count());
 
         $this->actingAs($this->admin)->get(route('proforma-invoices.show', $invoice))->assertOk()->assertSee('PI-000001');
@@ -91,13 +91,13 @@ class ProformaInvoiceTest extends TestCase
             'items' => [['item' => "product-{$zipper->id}", 'quantity' => 10, 'unit_price' => 12]],
         ]);
 
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', SalesOrder::first()));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload(SalesOrder::first()));
         $this->assertSame(0, ProformaInvoice::count());
     }
 
     public function test_draft_pi_items_can_be_finalised_then_locked_on_issue(): void
     {
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $this->confirmedOrder()));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($this->confirmedOrder()));
         $invoice = ProformaInvoice::with('items')->first();
         $first = $invoice->items->first();
         $direct = $invoice->items->firstWhere('fulfillment', 'purchase');
@@ -135,7 +135,7 @@ class ProformaInvoiceTest extends TestCase
     {
         Storage::fake('local');
 
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $this->confirmedOrder()));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($this->confirmedOrder()));
         $invoice = ProformaInvoice::first();
 
         // Not before it's issued.
@@ -170,7 +170,7 @@ class ProformaInvoiceTest extends TestCase
     public function test_cancelling_a_pi_returns_the_order_to_confirmed(): void
     {
         $order = $this->confirmedOrder();
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $order));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($order));
         $invoice = ProformaInvoice::first();
 
         $this->actingAs($this->admin)->post(route('proforma-invoices.cancel', $invoice));
@@ -178,7 +178,7 @@ class ProformaInvoiceTest extends TestCase
         $this->assertSame('cancelled', $invoice->refresh()->status);
         $this->assertSame('confirmed', $order->refresh()->status);
 
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $order));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($order));
         $this->assertSame(2, ProformaInvoice::count());
     }
 
@@ -187,7 +187,7 @@ class ProformaInvoiceTest extends TestCase
         $salesPerson = $this->userWithRole('Sales Person');
         $order = $this->confirmedOrder();
         $order->update(['sales_person_id' => $salesPerson->id]);
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $order));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($order));
         $invoice = ProformaInvoice::first();
 
         $this->actingAs($salesPerson)->get(route('proforma-invoices.show', $invoice))->assertOk();
@@ -209,7 +209,7 @@ class ProformaInvoiceTest extends TestCase
         ]);
         $order = SalesOrder::first();
         $this->actingAs($this->admin)->post(route('sales-orders.confirm', $order));
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $order));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($order));
 
         $invoice = ProformaInvoice::first();
         $items = $invoice->items()->orderBy('id')->get();
@@ -239,7 +239,7 @@ class ProformaInvoiceTest extends TestCase
     public function test_pi_print_amount_in_words_is_us_dollar(): void
     {
         \App\Models\CompanySetting::current()->update(['currency' => 'BDT']);
-        $this->actingAs($this->admin)->post(route('proforma-invoices.store', $this->confirmedOrder()));
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($this->confirmedOrder()));
 
         $this->actingAs($this->admin)->get(route('proforma-invoices.print', ProformaInvoice::first()))
             ->assertOk()->assertSee('US Dollar')->assertDontSee('Taka');

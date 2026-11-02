@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
  * so both number, total and store lines the same way.
  *
  * A line row is ['product' => Product, 'variant' => ?ProductVariant,
- * 'quantity' => float, 'unit_price' => float, 'subtotal' => float,
+ * 'quantity' => float, 'unit_price' => ?float (null = not priced yet), 'subtotal' => float,
  * 'style' => ?string, 'color' => ?string, 'length_per_unit' => ?float,
  * 'remarks' => ?string].
  */

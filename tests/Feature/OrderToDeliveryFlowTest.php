@@ -64,7 +64,7 @@ class OrderToDeliveryFlowTest extends TestCase
 
         // 2. Admin confirms and generates the PI, then issues it.
         $this->actingAs($admin)->post(route('sales-orders.confirm', $order));
-        $this->actingAs($admin)->post(route('proforma-invoices.store', $order));
+        $this->actingAs($admin)->post(route('proforma-invoices.store'), $this->piPayload($order));
         $pi = ProformaInvoice::first();
         $this->assertSame(['production', 'purchase'], $pi->items()->orderBy('id')->pluck('fulfillment')->all());
         $this->actingAs($admin)->post(route('proforma-invoices.issue', $pi));

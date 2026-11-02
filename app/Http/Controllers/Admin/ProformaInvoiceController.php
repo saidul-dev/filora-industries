@@ -22,7 +22,8 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Proforma Invoices — generated from a confirmed Sales Order and the
+ * Proforma Invoices — generated from one or more confirmed Sales Orders
+ * of a customer, and the
  * controlling document for procurement, production, LC, delivery and
  * collection (docs/order-to-delivery.md).
  */
@@ -35,7 +36,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
         return [
             new Middleware('permission:sales.view', only: ['index', 'show', 'print', 'lcFile']),
             new Middleware('permission:sales.edit', only: ['edit', 'update']),
-            new Middleware('permission:sales.approve', only: ['store', 'issue', 'attachLc', 'markReady', 'close', 'cancel']),
+            new Middleware('permission:sales.approve', only: ['create', 'store', 'issue', 'attachLc', 'markReady', 'close', 'cancel']),
         ];
     }
 
@@ -45,7 +46,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
         $partyId = $request->filled('party_id') ? $request->integer('party_id') : null;
         $q = $request->get('q');
 
-        $invoices = ProformaInvoice::with(['party', 'salesOrder', 'salesPerson'])
+        $invoices = ProformaInvoice::with(['party', 'salesOrders', 'salesPerson'])
             ->visibleTo(Auth::user())
             ->when($status, fn ($query) => $query->where('status', $status))
             ->when($partyId, fn ($query) => $query->where('party_id', $partyId))
@@ -63,37 +64,140 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
     }
 
     /**
-     * Generate a draft PI from a confirmed Sales Order: every order line is
-     * copied across with a planned fulfillment path — from existing stock
-     * when enough is on hand across all Sites, otherwise production for a
-     * Manufactured product and a direct purchase for anything else.
+     * Pick a customer, tick one or more of their confirmed Sales Orders and
+     * set (or override) each line's price — the PI is generated from all
+     * the ticked orders together.
      */
-    public function store(SalesOrder $salesOrder)
+    public function create(Request $request)
     {
-        if ($salesOrder->status !== 'confirmed') {
-            return back()->with('error', 'Only a confirmed Sales Order can be turned into a Proforma Invoice.');
+        $user = Auth::user();
+        $partyId = $request->filled('party_id') ? $request->integer('party_id') : null;
+
+        $confirmed = SalesOrder::where('status', 'confirmed')->visibleTo($user);
+
+        $customers = Party::whereIn('id', (clone $confirmed)->select('party_id'))->orderBy('name')->get(['id', 'name']);
+
+        $orders = $partyId
+            ? (clone $confirmed)->where('party_id', $partyId)
+                ->with(['items.product.stockUnit', 'items.productVariant.attributeValues'])
+                ->orderBy('order_date')->orderBy('id')->get()
+            : collect();
+
+        $orderData = $orders->map(fn (SalesOrder $order) => [
+            'id' => $order->id,
+            'order_no' => $order->order_no,
+            'reference' => collect([$order->buyer_reference, $order->buyer_name])->filter()->implode(' / '),
+            'order_date' => $order->order_date->format('d M, Y'),
+            'delivery_date' => $order->delivery_date?->toDateString(),
+            'discount' => (float) $order->discount_amount,
+            'terms' => $order->delivery_terms,
+            'lines' => $order->items->map(fn ($item) => $this->itemRow($item, [
+                'line_id' => $item->id,
+                'style' => $item->style,
+                'color' => $item->color,
+                'quantity' => (float) $item->quantity,
+                'unit_price' => $item->unit_price !== null ? (float) $item->unit_price : '',
+            ]))->values(),
+        ])->values();
+
+        return view('admin.proforma-invoices.create', [
+            'customers' => $customers,
+            'partyId' => $partyId,
+            'orders' => $orderData,
+            'selected' => collect(old('sales_order_ids', $request->input('orders', [])))->map(fn ($id) => (int) $id)->values(),
+        ]);
+    }
+
+    /**
+     * Generate one draft PI from one or more confirmed Sales Orders of the
+     * same customer. Every order line is copied across at the price given
+     * here (falling back to the order's own price), with a planned
+     * fulfillment path — from existing stock when enough is on hand across
+     * all Sites, otherwise production for a Manufactured product and a
+     * direct purchase for anything else.
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'party_id' => ['required', 'integer'],
+            'sales_order_ids' => ['required', 'array', 'min:1'],
+            'sales_order_ids.*' => ['integer', 'distinct'],
+            'prices' => ['nullable', 'array'],
+            'prices.*' => ['nullable', 'numeric', 'min:0'],
+            'pi_date' => ['required', 'date'],
+            'valid_until' => ['nullable', 'date', 'after_or_equal:pi_date'],
+            'delivery_date' => ['nullable', 'date'],
+            'terms' => ['nullable', 'string', 'max:3000'],
+            'note' => ['nullable', 'string', 'max:2000'],
+            'discount' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            'sales_order_ids.required' => 'Tick at least one Sales Order.',
+        ]);
+
+        $orders = SalesOrder::whereIn('id', $validated['sales_order_ids'])
+            ->where('party_id', $validated['party_id'])
+            ->where('status', 'confirmed')
+            ->visibleTo(Auth::user())
+            ->with('items.product')
+            ->orderBy('id')
+            ->get();
+
+        if ($orders->count() !== count($validated['sales_order_ids'])) {
+            throw ValidationException::withMessages([
+                'sales_order_ids' => 'Only confirmed Sales Orders of the selected customer can go on one Proforma Invoice.',
+            ]);
         }
 
-        $salesOrder->load('items.product');
+        // A price typed here wins; a blank one falls back to the order's.
+        $prices = $validated['prices'] ?? [];
+        $lines = [];
+        $missing = [];
 
-        $invoice = DB::transaction(function () use ($salesOrder) {
+        foreach ($orders as $order) {
+            foreach ($order->items as $item) {
+                $price = isset($prices[$item->id]) ? (float) $prices[$item->id] : $item->unit_price;
+
+                if ($price === null) {
+                    $missing["prices.{$item->id}"] = "Set a unit price for {$item->product->name} on {$order->order_no}.";
+
+                    continue;
+                }
+
+                $lines[] = [$item, (float) $price];
+            }
+        }
+
+        if ($missing) {
+            throw ValidationException::withMessages($missing);
+        }
+
+        $subtotal = round(array_sum(array_map(fn ($line) => round((float) $line[0]->quantity * $line[1], 2), $lines)), 2);
+        $discount = round((float) ($validated['discount'] ?? 0), 2);
+
+        if ($discount > $subtotal) {
+            throw ValidationException::withMessages(['discount' => 'Discount cannot exceed the subtotal.']);
+        }
+
+        $invoice = DB::transaction(function () use ($orders, $lines, $validated, $subtotal, $discount) {
             $invoice = ProformaInvoice::create([
                 'pi_no' => 'PENDING',
-                'sales_order_id' => $salesOrder->id,
-                'party_id' => $salesOrder->party_id,
-                'sales_person_id' => $salesOrder->sales_person_id,
-                'pi_date' => now()->toDateString(),
-                'delivery_date' => $salesOrder->delivery_date,
+                'party_id' => $validated['party_id'],
+                'sales_person_id' => $orders->first()->sales_person_id,
+                'pi_date' => $validated['pi_date'],
+                'valid_until' => $validated['valid_until'] ?? null,
+                'delivery_date' => $validated['delivery_date'] ?? null,
                 'status' => 'draft',
-                'subtotal_amount' => $salesOrder->subtotal_amount,
-                'discount_amount' => $salesOrder->discount_amount,
-                'total_amount' => $salesOrder->total_amount,
-                'terms' => $salesOrder->delivery_terms,
+                'subtotal_amount' => $subtotal,
+                'discount_amount' => $discount,
+                'total_amount' => $subtotal - $discount,
+                'terms' => $validated['terms'] ?? null,
+                'note' => $validated['note'] ?? null,
                 'created_by' => Auth::id(),
             ]);
             $invoice->update(['pi_no' => 'PI-'.str_pad($invoice->id, 6, '0', STR_PAD_LEFT)]);
+            $invoice->salesOrders()->attach($orders->pluck('id'));
 
-            foreach ($salesOrder->items as $item) {
+            foreach ($lines as [$item, $price]) {
                 $onHand = $this->stockBalance($item->product_id, $item->product_variant_id);
 
                 $invoice->items()->create([
@@ -104,21 +208,21 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                     'length_per_unit' => $item->length_per_unit,
                     'remarks' => $item->remarks,
                     'quantity' => $item->quantity,
-                    'unit_price' => $item->unit_price,
-                    'subtotal' => $item->subtotal,
+                    'unit_price' => $price,
+                    'subtotal' => round((float) $item->quantity * $price, 2),
                     'fulfillment' => $onHand >= (float) $item->quantity
                         ? 'stock'
                         : ProformaInvoiceItem::defaultFulfillmentFor($item->product),
                 ]);
             }
 
-            $salesOrder->update(['status' => 'pi_generated']);
+            SalesOrder::whereIn('id', $orders->pluck('id'))->update(['status' => 'pi_generated']);
 
             return $invoice;
         });
 
         return redirect()->route('proforma-invoices.show', $invoice)
-            ->with('success', "Proforma Invoice {$invoice->pi_no} generated from {$salesOrder->order_no} as a draft — review the final items, then issue it.");
+            ->with('success', "Proforma Invoice {$invoice->pi_no} generated from {$orders->pluck('order_no')->implode(', ')} as a draft — review the final items, then issue it.");
     }
 
     public function show(ProformaInvoice $proformaInvoice)
@@ -126,7 +230,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
         $this->authorizeVisible($proformaInvoice);
 
         $proformaInvoice->load([
-            'party', 'salesOrder', 'salesPerson', 'creator',
+            'party', 'salesOrders', 'salesPerson', 'creator',
             'items.product.stockUnit', 'items.product.bomItems.material.stockUnit', 'items.productVariant.attributeValues',
             'requisitions' => fn ($q) => $q->with('site')->withCount('items')->latest('id'),
             'purchases' => fn ($q) => $q->with(['party', 'site'])->latest('id'),
@@ -359,7 +463,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
     /**
      * Only before anything has been done against it — once goods are being
      * sourced, produced or delivered the PI has to run its course. The
-     * Sales Order goes back to Confirmed so a corrected PI can be generated.
+     * Sales Orders go back to Confirmed so a corrected PI can be generated.
      */
     public function cancel(ProformaInvoice $proformaInvoice)
     {
@@ -370,9 +474,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
         DB::transaction(function () use ($proformaInvoice) {
             $proformaInvoice->update(['status' => 'cancelled']);
 
-            if ($proformaInvoice->salesOrder?->status === 'pi_generated') {
-                $proformaInvoice->salesOrder->update(['status' => 'confirmed']);
-            }
+            $proformaInvoice->salesOrders()->where('status', 'pi_generated')->update(['sales_orders.status' => 'confirmed']);
         });
 
         return back()->with('success', "{$proformaInvoice->pi_no} cancelled.");
@@ -382,7 +484,7 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
     {
         $this->authorizeVisible($proformaInvoice);
 
-        $proformaInvoice->load(['party', 'salesOrder', 'salesPerson', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
+        $proformaInvoice->load(['party', 'salesOrders', 'salesPerson', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
         $company = CompanySetting::current();
 
         return view('admin.proforma-invoices.print', ['invoice' => $proformaInvoice, 'company' => $company]);
