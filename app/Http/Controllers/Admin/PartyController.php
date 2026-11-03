@@ -7,6 +7,7 @@ use App\Models\Party;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -41,7 +42,9 @@ class PartyController extends Controller implements HasMiddleware
             ->paginate(15)
             ->withQueryString();
 
-        return view('admin.parties.index', compact('parties', 'role'));
+        $balances = $this->ledgerBalances($parties->pluck('id')->all());
+
+        return view('admin.parties.index', compact('parties', 'role', 'balances'));
     }
 
     public function create()
@@ -137,6 +140,43 @@ class PartyController extends Controller implements HasMiddleware
         $party->delete();
 
         return redirect()->route('parties.index')->with('success', "Party \"{$party->name}\" deleted.");
+    }
+
+    /**
+     * Current ledger balances for a page of parties in one query — same
+     * sign convention as Party::receivableBalance() / payableBalance():
+     * receivable > 0 means the party owes us, payable > 0 means we owe them.
+     *
+     * @param  array<int>  $partyIds
+     * @return array<int, array{receivable: float, payable: float}>
+     */
+    protected function ledgerBalances(array $partyIds): array
+    {
+        if (! $partyIds) {
+            return [];
+        }
+
+        $rows = DB::table('ledger_transaction_lines')
+            ->join('ledger_accounts', 'ledger_accounts.id', '=', 'ledger_transaction_lines.ledger_account_id')
+            ->whereIn('ledger_transaction_lines.party_id', $partyIds)
+            ->whereIn('ledger_accounts.code', ['accounts_receivable', 'accounts_payable'])
+            ->groupBy('ledger_transaction_lines.party_id', 'ledger_accounts.code')
+            ->selectRaw('ledger_transaction_lines.party_id, ledger_accounts.code, SUM(debit) - SUM(credit) as net')
+            ->get();
+
+        $balances = [];
+
+        foreach ($rows as $row) {
+            $balances[$row->party_id] ??= ['receivable' => 0.0, 'payable' => 0.0];
+
+            if ($row->code === 'accounts_receivable') {
+                $balances[$row->party_id]['receivable'] = round((float) $row->net, 2);
+            } else {
+                $balances[$row->party_id]['payable'] = round(-(float) $row->net, 2);
+            }
+        }
+
+        return $balances;
     }
 
     protected function validated(Request $request, ?Party $party = null): array

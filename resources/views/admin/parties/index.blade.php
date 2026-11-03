@@ -85,14 +85,24 @@
                         </div>
                     </td>
                     <td class="px-5 py-3 text-right">
-                        @if ((float) $party->opening_balance > 0)
-                            <span class="font-semibold {{ $party->opening_balance_type === 'due' ? 'text-rose-600' : 'text-emerald-600' }}">
-                                {{ number_format($party->opening_balance, 2) }}
-                            </span>
-                            <span class="block text-xs text-slate-400">{{ $party->opening_balance_type === 'due' ? __('Due') : __('Advance') }}</span>
-                        @else
-                            <span class="text-slate-300">—</span>
-                        @endif
+                        @php
+                            $balance = $balances[$party->id] ?? ['receivable' => 0.0, 'payable' => 0.0];
+                            // Receivable: they owe us (due) or paid ahead (advance).
+                            // Payable: we owe them (payable) or paid ahead (advance paid).
+                            $lines = collect([
+                                $balance['receivable'] > 0 ? [$balance['receivable'], __('Receivable'), 'text-rose-600'] : null,
+                                $balance['receivable'] < 0 ? [-$balance['receivable'], __('Advance received'), 'text-emerald-600'] : null,
+                                $balance['payable'] > 0 ? [$balance['payable'], __('Payable'), 'text-amber-600'] : null,
+                                $balance['payable'] < 0 ? [-$balance['payable'], __('Advance paid'), 'text-emerald-600'] : null,
+                            ])->filter();
+                        @endphp
+                        @forelse ($lines as [$amount, $label, $color])
+                            <span class="block font-semibold tabular-nums {{ $color }}">{{ number_format($amount, 2) }}</span>
+                            <span class="block text-xs text-slate-400 {{ $loop->last ? '' : 'mb-1' }}">{{ $label }}</span>
+                        @empty
+                            <span class="font-semibold tabular-nums text-slate-400">0.00</span>
+                            <span class="block text-xs text-slate-400">{{ __('Settled') }}</span>
+                        @endforelse
                     </td>
                     <td class="px-5 py-3">
                         @can('parties.edit')
