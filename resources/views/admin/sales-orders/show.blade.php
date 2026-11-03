@@ -104,6 +104,21 @@
             </a>
             @endif
 
+            @if ($order->canSourceDirectly())
+            @php $toBuyTop = auth()->user()->can('purchases.create') ? $order->purchaseNeeds()->sum('to_buy') : 0; @endphp
+            <a href="#fulfillment-plan"
+               class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z"/></svg>
+                {{ __('Production / Purchase Plan') }}
+            </a>
+            @if ($toBuyTop > 0)
+            <a href="{{ route('purchases.create', ['from_sales_order' => $order->id]) }}"
+               class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
+                {{ __('Create Purchase Order') }}
+            </a>
+            @endif
+            @endif
+
             @if ($canApprove && in_array($order->status, \App\Models\SalesOrder::OPEN_STATUSES, true))
             <a href="{{ route('proforma-invoices.create', ['party_id' => $order->party_id, 'orders' => [$order->id]]) }}"
                class="inline-flex items-center gap-2 rounded-lg {{ $canDeliver ? 'border border-brand-200 bg-white text-brand-800 hover:bg-brand-50' : 'bg-brand-800 text-white hover:bg-brand-700' }} px-4 py-2 text-sm font-semibold">
@@ -140,6 +155,9 @@
             </form>
             @endif
         </div>
+        @if ($order->status === 'pending')
+        <p class="mt-3 text-xs text-slate-400">{{ __('Confirm the order to plan production and purchases, deliver against it or put it on a Proforma Invoice. A pending order stays editable, so nothing is sourced for it yet.') }}</p>
+        @endif
         @endif
     </div>
 
@@ -150,6 +168,7 @@
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-4 py-3 font-semibold">{{ __('Style') }}</th>
                     <th class="px-4 py-3 font-semibold">{{ __('Product') }}</th>
+                    <th class="px-4 py-3 font-semibold">{{ __('Type') }}</th>
                     <th class="px-4 py-3 font-semibold">{{ __('Color') }}</th>
                     <th class="px-4 py-3 font-semibold text-right">{{ __('Quantity') }}</th>
                     @if ($anyDelivered)
@@ -167,7 +186,20 @@
                     <td class="px-4 py-3 font-semibold text-slate-800">{{ $item->style ?: '—' }}</td>
                     <td class="px-4 py-3">
                         <span class="block font-semibold text-slate-800">{{ $item->product->name }}{{ $item->productVariant ? ' — '.$item->productVariant->label : '' }}</span>
-                        <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }} · {{ __(\App\Models\Product::TYPES[$item->product->product_type] ?? '—') }}</span>
+                        <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        @php
+                            $typeBadge = [
+                                'manufactured' => ['Manufactured', 'bg-indigo-50 text-indigo-700'],
+                                'direct_purchase' => ['Direct Purchase', 'bg-sky-50 text-sky-700'],
+                                'raw_material' => ['Raw Material', 'bg-slate-100 text-slate-600'],
+                            ][$item->product->product_type] ?? [$item->product->product_type, 'bg-slate-100 text-slate-600'];
+                        @endphp
+                        <span class="inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold {{ $typeBadge[1] }}">{{ __($typeBadge[0]) }}</span>
+                        @if (in_array($order->status, \App\Models\SalesOrder::OPEN_STATUSES, true))
+                            <span class="mt-1 block whitespace-nowrap text-xs text-slate-500">{{ __('Plan') }}: {{ __($item->fulfillment_label) }}</span>
+                        @endif
                     </td>
                     <td class="px-4 py-3 text-slate-600">{{ $item->color ?: '—' }}</td>
                     <td class="px-4 py-3 text-right font-semibold text-slate-800">{{ rtrim(rtrim(number_format($item->quantity, 4), '0'), '.') }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
@@ -187,19 +219,19 @@
             </tbody>
             <tfoot class="border-t border-slate-200 bg-slate-50">
                 <tr>
-                    <td colspan="{{ $anyDelivered ? 7 : 6 }}" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Subtotal') }}</td>
+                    <td colspan="{{ $anyDelivered ? 8 : 7 }}" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Subtotal') }}</td>
                     <td class="px-4 py-2 text-right font-semibold text-slate-800">{{ number_format($order->subtotal_amount, 2) }}</td>
                     <td></td>
                 </tr>
                 @if ((float) $order->discount_amount > 0)
                 <tr>
-                    <td colspan="{{ $anyDelivered ? 7 : 6 }}" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Discount') }}</td>
+                    <td colspan="{{ $anyDelivered ? 8 : 7 }}" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Discount') }}</td>
                     <td class="px-4 py-2 text-right text-slate-600">− {{ number_format($order->discount_amount, 2) }}</td>
                     <td></td>
                 </tr>
                 @endif
                 <tr>
-                    <td colspan="{{ $anyDelivered ? 7 : 6 }}" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total') }}</td>
+                    <td colspan="{{ $anyDelivered ? 8 : 7 }}" class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total') }}</td>
                     <td class="px-4 py-2 text-right text-base font-bold text-brand-900">USD {{ number_format($order->total_amount, 2) }}</td>
                     <td></td>
                 </tr>
@@ -207,6 +239,144 @@
         </table>
         </div>
     </div>
+
+    @php
+        $canPlan = $order->canSourceDirectly();
+        $purchaseNeeds = $canPlan ? $order->purchaseNeeds() : collect();
+        $toBuy = $purchaseNeeds->sum('to_buy');
+        $user = auth()->user();
+    @endphp
+    @if ($canPlan || $order->productionOrders->isNotEmpty() || $order->purchases->isNotEmpty())
+    <div id="fulfillment-plan" class="mt-4 scroll-mt-24 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div class="flex flex-wrap items-end justify-between gap-4 px-6 pt-5 pb-4">
+            <div>
+                <h3 class="font-bold text-brand-900">{{ __('Fulfillment Plan') }}</h3>
+                <p class="text-xs text-slate-400">
+                    @if ($canPlan)
+                        {{ __('Decide how each line is fulfilled, then start production or buy straight from this order. A PI raised later takes over the plan and everything started here.') }}
+                    @else
+                        {{ __('Production and purchases started from this order. Further sourcing happens on its Proforma Invoice.') }}
+                    @endif
+                </p>
+            </div>
+            @if ($canPlan && $toBuy > 0 && $user->can('purchases.create'))
+            <a href="{{ route('purchases.create', ['from_sales_order' => $order->id]) }}"
+               class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
+                {{ __('Create Purchase Order') }}
+            </a>
+            @endif
+        </div>
+
+        @if ($canPlan)
+        <form method="POST" action="{{ route('sales-orders.plan', $order) }}">
+            @csrf
+            <div class="overflow-x-auto border-y border-slate-100">
+            <table class="w-full min-w-[820px] text-sm">
+                <thead>
+                    <tr class="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                        <th class="py-2.5 pl-6 pr-2">{{ __('Product') }}</th>
+                        <th class="w-28 px-2 py-2.5 text-right">{{ __('Still to deliver') }}</th>
+                        <th class="w-56 px-2 py-2.5">{{ __('Fulfilled by') }}</th>
+                        <th class="w-56 py-2.5 pl-2 pr-6">{{ __('Next step') }}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @foreach ($order->items as $item)
+                    @php $plan = $item->plannedFulfillment(); @endphp
+                    <tr class="hover:bg-slate-50/70">
+                        <td class="py-2.5 pl-6 pr-2">
+                            <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
+                            @if ($item->lineDetails())<span class="block text-xs text-slate-500">{{ $item->lineDetails() }}</span>@endif
+                        </td>
+                        <td class="px-2 py-2.5 text-right tabular-nums text-slate-700">{{ $qty($item->remaining()) }}</td>
+                        <td class="px-2 py-2">
+                            @if ($user->can('sales.edit'))
+                            <select name="fulfillment[{{ $item->id }}]"
+                                    class="block w-full rounded-md border-slate-300 py-1.5 text-sm focus:border-accent-500 focus:ring-accent-500">
+                                @foreach (\App\Models\ProformaInvoiceItem::FULFILLMENTS as $key => $label)
+                                    <option value="{{ $key }}" @selected($plan === $key) @disabled($key === 'production' && ! $item->product->isManufactured())>{{ __($label) }}</option>
+                                @endforeach
+                            </select>
+                            <x-input-error class="mt-1" :messages="$errors->get('fulfillment.'.$item->id)" />
+                            @else
+                            <span class="text-slate-700">{{ __($item->fulfillment_label) }}</span>
+                            @endif
+                        </td>
+                        <td class="py-2.5 pl-2 pr-6 text-xs">
+                            @if ($item->remaining() <= 0)
+                                <span class="text-teal-600">{{ __('Delivered') }}</span>
+                            @elseif ($plan === 'production')
+                                @php $toProduce = $item->quantityToProduce(); @endphp
+                                @if ($toProduce > 0 && $user->can('production.create'))
+                                    <a href="{{ route('production-orders.create', ['sales_order_item_id' => $item->id]) }}"
+                                       class="inline-flex items-center rounded-md bg-brand-800 px-2.5 py-1 font-semibold text-white hover:bg-brand-700">{{ __('Produce :qty', ['qty' => $qty($toProduce)]) }}</a>
+                                @elseif ($toProduce > 0)
+                                    <span class="text-amber-600">{{ __(':qty to produce', ['qty' => $qty($toProduce)]) }}</span>
+                                @else
+                                    <span class="text-emerald-600">{{ __('In production') }}</span>
+                                @endif
+                            @elseif ($plan === 'purchase')
+                                @php $need = $purchaseNeeds->get($item->product_id.':'.($item->product_variant_id ?? '')); @endphp
+                                @if ($need && $need->to_buy > 0)
+                                    <span class="text-amber-600">{{ __('To buy — use "Create Purchase Order"') }}</span>
+                                @else
+                                    <span class="text-emerald-600">{{ __('On a Purchase Order') }}</span>
+                                @endif
+                            @else
+                                <span class="text-slate-500">{{ __('Deliver from stock') }}</span>
+                            @endif
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+            </div>
+            @if ($user->can('sales.edit'))
+            <div class="flex justify-end px-6 py-4">
+                <button type="submit" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">{{ __('Save Plan') }}</button>
+            </div>
+            @endif
+        </form>
+        @endif
+
+        @if ($order->productionOrders->isNotEmpty() || $order->purchases->isNotEmpty())
+        <div class="grid grid-cols-1 gap-4 px-6 pb-6 {{ $canPlan ? '' : 'pt-1' }} lg:grid-cols-2">
+            <div>
+                <p class="mb-2 text-xs font-semibold text-slate-500">{{ __('Production Orders') }}</p>
+                <ul class="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200 text-sm">
+                    @forelse ($order->productionOrders as $production)
+                    <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+                        <span>
+                            <a href="{{ route('production-orders.show', $production) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $production->production_no }}</a>
+                            <span class="block text-xs text-slate-400">{{ $production->label() }} · {{ $qty($production->quantity) }} · {{ $production->site->name }}</span>
+                        </span>
+                        <x-status-badge :label="$production->status_label" :color="\App\Models\ProductionOrder::STATUS_COLORS[$production->status] ?? 'slate'" />
+                    </li>
+                    @empty
+                    <li class="px-4 py-2.5 text-xs text-slate-400">{{ __('None yet.') }}</li>
+                    @endforelse
+                </ul>
+            </div>
+            <div>
+                <p class="mb-2 text-xs font-semibold text-slate-500">{{ __('Purchase Orders') }}</p>
+                <ul class="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200 text-sm">
+                    @forelse ($order->purchases as $purchase)
+                    <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+                        <span>
+                            <a href="{{ route('purchases.show', $purchase) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $purchase->purchase_no }}</a>
+                            <span class="block text-xs text-slate-400">{{ $purchase->vendorName() }} · {{ number_format($purchase->total_amount, 2) }}</span>
+                        </span>
+                        <x-status-badge :label="$purchase->status_label" :color="\App\Models\Purchase::STATUS_COLORS[$purchase->status] ?? 'slate'" />
+                    </li>
+                    @empty
+                    <li class="px-4 py-2.5 text-xs text-slate-400">{{ __('None yet.') }}</li>
+                    @endforelse
+                </ul>
+            </div>
+        </div>
+        @endif
+    </div>
+    @endif
 
     @if ($order->deliveries->isNotEmpty())
     <div class="mt-4 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">

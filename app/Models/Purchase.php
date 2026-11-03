@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SourcedFromSalesDocument;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Purchase extends Model
 {
+    use SourcedFromSalesDocument;
+
     /**
      * Pending (editable, nothing received) → Partially Received → Received,
      * with Cancelled as the exit for whatever hasn't arrived yet. Status
@@ -31,6 +34,7 @@ class Purchase extends Model
         'purchase_no',
         'purchase_requisition_id',
         'proforma_invoice_id',
+        'sales_order_id',
         'party_id',
         'vendor_name',
         'vendor_phone',

@@ -4,7 +4,7 @@
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-brand-900">{{ __('Purchase Orders') }}</h2>
-                <p class="text-sm text-slate-500 mt-0.5">{{ __('Orders placed against approved requisitions, and the goods received for them.') }}</p>
+                <p class="text-sm text-slate-500 mt-0.5">{{ __('Orders placed against approved requisitions or straight from Sales Orders, and the goods received for them.') }}</p>
             </div>
             @can('purchases.create')
             <a href="{{ route('purchases.create') }}"
@@ -66,8 +66,8 @@
                         @if ($purchase->isOneTimeVendor())<span class="block text-xs text-slate-400">{{ __('One-time vendor') }}</span>@endif
                     </td>
                     <td class="px-5 py-3 text-slate-600">
-                        {{ $purchase->proformaInvoice->pi_no }}
-                        <span class="block text-xs text-slate-400">{{ $purchase->requisition->requisition_no }}</span>
+                        {{ $purchase->sourceNo() }}
+                        <span class="block text-xs text-slate-400">{{ $purchase->requisition->requisition_no ?? __('Direct from order') }}</span>
                     </td>
                     <td class="px-5 py-3 text-slate-600">{{ $purchase->site->name }}</td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ number_format($purchase->total_amount, 2) }}</td>

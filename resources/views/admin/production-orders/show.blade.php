@@ -45,13 +45,13 @@
 
         <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
             <div>
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Proforma Invoice') }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ $order->proformaInvoice ? __('Proforma Invoice') : __('Sales Order') }}</span>
                 @can('sales.view')
-                <a href="{{ route('proforma-invoices.show', $order->proformaInvoice) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $order->proformaInvoice->pi_no }}</a>
+                <a href="{{ $order->sourceUrl() }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $order->sourceNo() }}</a>
                 @else
-                <span class="block text-slate-700">{{ $order->proformaInvoice->pi_no }}</span>
+                <span class="block text-slate-700">{{ $order->sourceNo() }}</span>
                 @endcan
-                <span class="block text-xs text-slate-400">{{ $order->proformaInvoice->party->name }}</span>
+                <span class="block text-xs text-slate-400">{{ $order->buyer()?->name }}</span>
             </div>
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Production Site') }}</span>

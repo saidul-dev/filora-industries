@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ProformaInvoice;
+use App\Models\PurchaseItem;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
 use App\Models\StockMovement;
@@ -19,9 +20,11 @@ use Illuminate\Support\Collection;
  *    Production Order has been issued for yet;
  *  - a "stock" line needs nothing bought.
  *
- * Demand is netted against what's on hand across every Site and what open
- * requisitions under the same PI are already sourcing, so the suggestion
- * is "what else to requisition", not the gross requirement.
+ * Demand is netted against what's on hand across every Site, what open
+ * requisitions under the same PI are already sourcing, and what Purchase
+ * Orders raised straight from its Sales Orders (adopted on issue) cover —
+ * so the suggestion is "what else to requisition", not the gross
+ * requirement.
  */
 class PiFulfillmentPlanner
 {
@@ -97,10 +100,24 @@ class PiFulfillmentPlanner
      */
     protected function alreadyRequested(ProformaInvoice $invoice): array
     {
-        return PurchaseRequisitionItem::query()
+        $requested = PurchaseRequisitionItem::query()
             ->whereHas('requisition', fn ($q) => $q->where('proforma_invoice_id', $invoice->id)
                 ->whereIn('status', PurchaseRequisition::OPEN_STATUSES))
-            ->get(['product_id', 'product_variant_id', 'quantity'])
+            ->get(['product_id', 'product_variant_id', 'quantity']);
+
+        // Direct POs have no requisition; a cancelled one only covers what
+        // it received.
+        $direct = PurchaseItem::query()
+            ->whereHas('purchase', fn ($q) => $q->where('proforma_invoice_id', $invoice->id)->whereNull('purchase_requisition_id'))
+            ->with('purchase:id,status')
+            ->get()
+            ->map(fn (PurchaseItem $item) => (object) [
+                'product_id' => $item->product_id,
+                'product_variant_id' => $item->product_variant_id,
+                'quantity' => $item->purchase->status === 'cancelled' ? (float) $item->received_quantity : (float) $item->quantity,
+            ]);
+
+        return $requested->toBase()->concat($direct)
             ->groupBy(fn ($item) => $item->product_id.':'.($item->product_variant_id ?? ''))
             ->map(fn ($items) => (float) $items->sum('quantity'))
             ->all();

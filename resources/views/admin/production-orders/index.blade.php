@@ -77,8 +77,8 @@
                     </td>
                     <td class="px-5 py-3 text-slate-700">{{ $order->label() }}</td>
                     <td class="px-5 py-3 text-slate-600">
-                        {{ $order->proformaInvoice->pi_no }}
-                        <span class="block text-xs text-slate-400">{{ $order->proformaInvoice->party->name }}</span>
+                        {{ $order->sourceNo() }}
+                        <span class="block text-xs text-slate-400">{{ $order->buyer()?->name }}</span>
                     </td>
                     <td class="px-5 py-3 text-slate-600">{{ $order->site->name }}</td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">

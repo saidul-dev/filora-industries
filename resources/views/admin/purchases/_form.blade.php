@@ -1,4 +1,4 @@
-{{-- Shared by create/edit. $purchase is only set when editing; $requisition is the source requisition. --}}
+{{-- Shared by create/edit. $purchase is only set when editing; the source is $requisition or, for a PO straight from a Sales Order, $salesOrder. --}}
 @php
     $editing = isset($purchase);
     $cartItems = collect(old('items', []))
@@ -10,14 +10,18 @@
         $cartItems = $items;
     }
     $vendorType = old('vendor_type', $editing && $purchase->isOneTimeVendor() ? 'one_time' : 'supplier');
-    $defaultSiteId = $editing ? $purchase->site_id : $requisition->site_id;
+    $defaultSiteId = $editing ? $purchase->site_id : ($requisition?->site_id ?? $sites->firstWhere('type', 'Factory')?->id);
 @endphp
 
 <div x-data="purchaseCart(@js(['itemOptions' => $itemOptions, 'items' => $cartItems]))">
     <form method="POST" action="{{ $editing ? route('purchases.update', $purchase) : route('purchases.store') }}">
         @csrf
         @if ($editing) @method('PUT') @else
+        @if ($requisition)
         <input type="hidden" name="purchase_requisition_id" value="{{ $requisition->id }}">
+        @else
+        <input type="hidden" name="sales_order_id" value="{{ $salesOrder->id }}">
+        @endif
         @endif
 
         <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 mb-4" x-data="{ vendorType: @js($vendorType) }">
@@ -79,7 +83,7 @@
                 <div>
                     <x-input-label for="expected_date" :value="__('Expected Delivery (optional)')" />
                     <x-text-input id="expected_date" name="expected_date" type="date" class="mt-1 block w-full"
-                                  :value="old('expected_date', $editing ? $purchase->expected_date?->toDateString() : $requisition->required_by?->toDateString())" />
+                                  :value="old('expected_date', $editing ? $purchase->expected_date?->toDateString() : ($requisition?->required_by ?? $salesOrder?->delivery_start_date ?? $salesOrder?->delivery_date)?->toDateString())" />
                     <x-input-error class="mt-2" :messages="$errors->get('expected_date')" />
                 </div>
             </div>
@@ -150,6 +154,7 @@
         </div>
         <x-input-error class="mb-2" :messages="$errors->get('items')" />
         <x-input-error class="mb-2" :messages="$errors->get('purchase_requisition_id')" />
+        <x-input-error class="mb-2" :messages="$errors->get('sales_order_id')" />
         @foreach ($errors->get('items.*') as $messages)
             <x-input-error class="mb-1" :messages="$messages" />
         @endforeach
@@ -166,7 +171,7 @@
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
                     {{ $editing ? __('Update Purchase Order') : __('Place Purchase Order') }}
                 </button>
-                <a href="{{ $editing ? route('purchases.show', $purchase) : route('purchase-requisitions.show', $requisition) }}"
+                <a href="{{ $editing ? route('purchases.show', $purchase) : ($requisition ? route('purchase-requisitions.show', $requisition) : route('sales-orders.show', $salesOrder)) }}"
                    class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">{{ __('Cancel') }}</a>
             </div>
         </div>

@@ -6,12 +6,14 @@ use App\Http\Controllers\Concerns\PicksProducts;
 use App\Http\Controllers\Concerns\WritesSalesOrders;
 use App\Http\Controllers\Controller;
 use App\Models\Party;
+use App\Models\ProformaInvoiceItem;
 use App\Models\SalesOrder;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -30,7 +32,7 @@ class SalesOrderController extends Controller implements HasMiddleware
         return [
             new Middleware('permission:sales.view', only: ['index', 'show']),
             new Middleware('permission:sales.create', only: ['create', 'store']),
-            new Middleware('permission:sales.edit', only: ['edit', 'update']),
+            new Middleware('permission:sales.edit', only: ['edit', 'update', 'plan']),
             new Middleware('permission:sales.delete', only: ['destroy']),
             new Middleware('permission:sales.approve', only: ['confirm', 'cancel']),
         ];
@@ -84,6 +86,8 @@ class SalesOrderController extends Controller implements HasMiddleware
             'party', 'salesPerson', 'creator', 'confirmedBy', 'proformaInvoices',
             'items.product.stockUnit', 'items.productVariant.attributeValues',
             'deliveries' => fn ($q) => $q->with(['site', 'proformaInvoice'])->withCount('items')->latest('id'),
+            'items.productionOrders', 'purchases.items',
+            'productionOrders' => fn ($q) => $q->with(['site', 'product', 'productVariant.attributeValues'])->latest('id'),
         ]);
 
         return view('admin.sales-orders.show', ['order' => $salesOrder]);
@@ -165,6 +169,44 @@ class SalesOrderController extends Controller implements HasMiddleware
         ]);
 
         return back()->with('success', "Sales Order {$salesOrder->order_no} confirmed — it can now be turned into a Proforma Invoice.");
+    }
+
+    /**
+     * How each line of a confirmed order will be fulfilled — from stock, a
+     * direct purchase or factory production. Drives the order's own
+     * "Produce" / "Create Purchase Order" actions, and is copied onto a PI
+     * generated from the order.
+     */
+    public function plan(Request $request, SalesOrder $salesOrder)
+    {
+        $this->authorizeVisible($salesOrder);
+
+        if (! $salesOrder->canSourceDirectly()) {
+            return back()->with('error', 'Only a confirmed order not yet on a Proforma Invoice can be planned here — plan it on its PI instead.');
+        }
+
+        $validated = $request->validate([
+            'fulfillment' => ['required', 'array'],
+            'fulfillment.*' => ['required', Rule::in(array_keys(ProformaInvoiceItem::FULFILLMENTS))],
+        ]);
+
+        $salesOrder->load('items.product');
+
+        foreach ($salesOrder->items as $item) {
+            $plan = $validated['fulfillment'][$item->id] ?? null;
+
+            if (! $plan) {
+                continue;
+            }
+
+            if ($plan === 'production' && ! $item->product->isManufactured()) {
+                throw ValidationException::withMessages(["fulfillment.{$item->id}" => "{$item->product->name} is not a Manufactured product — it can't be fulfilled by factory production."]);
+            }
+
+            $item->update(['fulfillment' => $plan]);
+        }
+
+        return back()->with('success', "Fulfillment plan for {$salesOrder->order_no} saved.");
     }
 
     public function cancel(SalesOrder $salesOrder)

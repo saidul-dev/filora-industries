@@ -3,7 +3,13 @@
     <x-slot name="header">
         <div>
             <h2 class="text-2xl font-bold text-brand-900">{{ __('Edit Purchase Order') }} {{ $purchase->purchase_no }}</h2>
-            <p class="text-sm text-slate-500 mt-0.5">{{ __('From :req under :pi', ['req' => $requisition->requisition_no, 'pi' => $requisition->proformaInvoice->pi_no]) }}</p>
+            <p class="text-sm text-slate-500 mt-0.5">
+                @if ($requisition)
+                    {{ __('From :req under :pi', ['req' => $requisition->requisition_no, 'pi' => $requisition->proformaInvoice->pi_no]) }}
+                @else
+                    {{ __('For :so', ['so' => $purchase->sourceNo()]) }}
+                @endif
+            </p>
         </div>
     </x-slot>
 

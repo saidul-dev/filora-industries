@@ -38,17 +38,21 @@
 
         <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
             <div>
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Proforma Invoice') }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ $purchase->proformaInvoice ? __('Proforma Invoice') : __('Sales Order') }}</span>
                 @can('sales.view')
-                <a href="{{ route('proforma-invoices.show', $purchase->proformaInvoice) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $purchase->proformaInvoice->pi_no }}</a>
+                <a href="{{ $purchase->sourceUrl() }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $purchase->sourceNo() }}</a>
                 @else
-                <span class="block text-slate-700">{{ $purchase->proformaInvoice->pi_no }}</span>
+                <span class="block text-slate-700">{{ $purchase->sourceNo() }}</span>
                 @endcan
-                <span class="block text-xs text-slate-400">{{ $purchase->proformaInvoice->party->name }}</span>
+                <span class="block text-xs text-slate-400">{{ $purchase->buyer()?->name }}</span>
             </div>
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Requisition') }}</span>
+                @if ($purchase->requisition)
                 <a href="{{ route('purchase-requisitions.show', $purchase->requisition) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $purchase->requisition->requisition_no }}</a>
+                @else
+                <span class="block text-slate-700">{{ __('None — ordered straight from the Sales Order') }}</span>
+                @endif
             </div>
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Order Date') }}</span>

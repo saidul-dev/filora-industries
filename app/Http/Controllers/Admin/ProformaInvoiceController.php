@@ -9,8 +9,10 @@ use App\Models\CompanySetting;
 use App\Models\Delivery;
 use App\Models\DeliveryItem;
 use App\Models\Party;
+use App\Models\ProductionOrder;
 use App\Models\ProformaInvoice;
 use App\Models\ProformaInvoiceItem;
+use App\Models\Purchase;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderItem;
 use App\Models\StockMovement;
@@ -219,9 +221,11 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                     'quantity' => $item->quantity,
                     'unit_price' => $price,
                     'subtotal' => round((float) $item->quantity * $price, 2),
-                    'fulfillment' => $item->remaining() <= 0 || $onHand >= $item->remaining()
+                    // The plan made on the order wins; otherwise stock if it
+                    // covers what's left, else the product type's default.
+                    'fulfillment' => $item->fulfillment ?? ($item->remaining() <= 0 || $onHand >= $item->remaining()
                         ? 'stock'
-                        : ProformaInvoiceItem::defaultFulfillmentFor($item->product),
+                        : ProformaInvoiceItem::defaultFulfillmentFor($item->product)),
                     'delivered_quantity' => $item->delivered_quantity,
                 ]);
             }
@@ -405,9 +409,10 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
     }
 
     /**
-     * Locks the PI. Challans that already went out straight against its
-     * Sales Orders move onto it, so its billed / collected / due figures
-     * cover them, and its status reflects what is already delivered.
+     * Locks the PI. Challans, Production Orders and Purchase Orders already
+     * raised straight from its Sales Orders move onto it — so its billed /
+     * collected / due figures and its sourcing plan cover them — and its
+     * status reflects what is already under way or delivered.
      */
     public function issue(ProformaInvoice $proformaInvoice)
     {
@@ -432,10 +437,25 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
                     ->update(['proforma_invoice_item_id' => $line->id]);
             }
 
-            Delivery::whereIn('sales_order_id', $proformaInvoice->salesOrders->pluck('id'))->whereNull('proforma_invoice_id')
+            $orderIds = $proformaInvoice->salesOrders->pluck('id');
+
+            Delivery::whereIn('sales_order_id', $orderIds)->whereNull('proforma_invoice_id')
+                ->update(['proforma_invoice_id' => $proformaInvoice->id]);
+
+            $adoptedProduction = 0;
+            foreach ($piLines as $orderItemId => $line) {
+                $adoptedProduction += ProductionOrder::where('sales_order_item_id', $orderItemId)->whereNull('proforma_invoice_id')
+                    ->update(['proforma_invoice_id' => $proformaInvoice->id, 'proforma_invoice_item_id' => $line->id]);
+            }
+
+            $adoptedPurchases = Purchase::whereIn('sales_order_id', $orderIds)->whereNull('proforma_invoice_id')
                 ->update(['proforma_invoice_id' => $proformaInvoice->id]);
 
             $proformaInvoice->update(['status' => 'issued', 'issued_at' => now()]);
+
+            if ($adoptedProduction || $adoptedPurchases) {
+                $proformaInvoice->markInProgress();
+            }
 
             if ($proformaInvoice->items->contains(fn ($item) => (float) $item->delivered_quantity > 0)) {
                 $proformaInvoice->recalculateDeliveryStatus();

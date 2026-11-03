@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 class SalesOrder extends Model
 {
@@ -124,12 +125,71 @@ class SalesOrder extends Model
     }
 
     /**
+     * Production Orders raised straight from this order (before any PI).
+     */
+    public function productionOrders(): HasMany
+    {
+        return $this->hasMany(ProductionOrder::class);
+    }
+
+    /**
+     * Purchase Orders raised straight from this order (before any PI).
+     */
+    public function purchases(): HasMany
+    {
+        return $this->hasMany(Purchase::class);
+    }
+
+    /**
      * Goods can go out straight against the order while it is confirmed
      * and not on a live PI — afterwards they go out against the PI.
      */
     public function canDeliverDirectly(): bool
     {
         return in_array($this->status, ['confirmed', 'partially_delivered'], true);
+    }
+
+    /**
+     * Same window as direct delivery: the order can be planned, produced
+     * and bought for on its own until a live PI takes over.
+     */
+    public function canSourceDirectly(): bool
+    {
+        return $this->canDeliverDirectly();
+    }
+
+    /**
+     * What the order still has to buy as finished goods, per product: the
+     * undelivered quantity of its "purchase" lines, less what Purchase
+     * Orders raised from the order already cover (a cancelled PO only
+     * covers what it received). Several lines of one product (different
+     * styles or colors) are bought together.
+     *
+     * @return Collection<string, object{product: Product, variant: ?ProductVariant, needed: float, ordered: float, to_buy: float}>
+     */
+    public function purchaseNeeds(): Collection
+    {
+        $this->loadMissing(['items.product', 'items.productVariant', 'purchases.items']);
+
+        $ordered = $this->purchases->flatMap->items->groupBy(fn (PurchaseItem $item) => $item->product_id.':'.($item->product_variant_id ?? ''))
+            ->map(fn ($items) => $items->sum(fn (PurchaseItem $item) => $this->purchases->firstWhere('id', $item->purchase_id)->status === 'cancelled'
+                ? (float) $item->received_quantity
+                : (float) $item->quantity));
+
+        return $this->items->filter(fn (SalesOrderItem $item) => $item->plannedFulfillment() === 'purchase' && $item->remaining() > 0)
+            ->groupBy(fn (SalesOrderItem $item) => $item->product_id.':'.($item->product_variant_id ?? ''))
+            ->map(function ($lines, $key) use ($ordered) {
+                $needed = round($lines->sum(fn (SalesOrderItem $item) => $item->remaining()), 4);
+                $covered = (float) ($ordered[$key] ?? 0);
+
+                return (object) [
+                    'product' => $lines->first()->product,
+                    'variant' => $lines->first()->productVariant,
+                    'needed' => $needed,
+                    'ordered' => $covered,
+                    'to_buy' => max(round($needed - $covered, 4), 0),
+                ];
+            });
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SourcedFromSalesDocument;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class ProductionOrder extends Model
 {
+    use SourcedFromSalesDocument;
+
     /**
      * Basic (Package A) production status — Not Started → In Progress →
      * Completed, with Cancelled as the exit before completion. Raw
@@ -33,6 +36,8 @@ class ProductionOrder extends Model
         'production_no',
         'proforma_invoice_id',
         'proforma_invoice_item_id',
+        'sales_order_id',
+        'sales_order_item_id',
         'product_id',
         'product_variant_id',
         'site_id',
@@ -67,6 +72,11 @@ class ProductionOrder extends Model
     public function proformaInvoiceItem(): BelongsTo
     {
         return $this->belongsTo(ProformaInvoiceItem::class);
+    }
+
+    public function salesOrderItem(): BelongsTo
+    {
+        return $this->belongsTo(SalesOrderItem::class);
     }
 
     public function product(): BelongsTo

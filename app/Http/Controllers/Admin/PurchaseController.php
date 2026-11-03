@@ -10,6 +10,7 @@ use App\Models\Party;
 use App\Models\Purchase;
 use App\Models\PurchaseReceipt;
 use App\Models\PurchaseRequisition;
+use App\Models\SalesOrder;
 use App\Models\Site;
 use App\Models\StockMovement;
 use App\Services\LedgerService;
@@ -21,9 +22,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Purchase Orders against approved Inventory Requisitions, and the Goods
- * Receipts that bring the goods into Factory/Office stock and record the
- * purchase cost in Accounts (docs/order-to-delivery.md).
+ * Purchase Orders — against approved Inventory Requisitions (under a PI),
+ * or straight from a confirmed Sales Order that has no PI yet, skipping
+ * the requisition step — and the Goods Receipts that bring the goods into
+ * Factory/Office stock and record the purchase cost in Accounts
+ * (docs/order-to-delivery.md).
  */
 class PurchaseController extends Controller implements HasMiddleware
 {
@@ -44,7 +47,7 @@ class PurchaseController extends Controller implements HasMiddleware
         $status = array_key_exists($request->get('status'), Purchase::STATUSES) ? $request->get('status') : null;
         $q = $request->get('q');
 
-        $purchases = Purchase::with(['party', 'site', 'proformaInvoice', 'requisition'])
+        $purchases = Purchase::with(['party', 'site', 'proformaInvoice', 'salesOrder', 'requisition'])
             ->when($status, fn ($query) => $query->where('status', $status))
             ->when($q, fn ($query) => $query->where(fn ($query) => $query
                 ->where('purchase_no', 'like', "%{$q}%")
@@ -61,11 +64,37 @@ class PurchaseController extends Controller implements HasMiddleware
     }
 
     /**
-     * Only from an approved requisition — the cart is pre-filled from its
-     * lines (quantities/estimated costs stay editable, lines removable).
+     * From an approved requisition, or from a confirmed Sales Order's
+     * "purchase" lines — the cart is pre-filled with what is still to be
+     * bought (quantities/estimated costs stay editable, lines removable).
      */
     public function create(Request $request)
     {
+        if ($request->filled('from_sales_order')) {
+            $salesOrder = SalesOrder::with(['party', 'items.product.stockUnit', 'items.productVariant.attributeValues', 'purchases.items'])
+                ->find($request->integer('from_sales_order'));
+
+            abort_unless($salesOrder && $salesOrder->canSourceDirectly(), 404);
+
+            $items = $salesOrder->purchaseNeeds()->filter(fn ($need) => $need->to_buy > 0)
+                ->map(fn ($need) => [
+                    'id' => $need->variant ? "variant-{$need->variant->id}" : "product-{$need->product->id}",
+                    'name' => $need->variant
+                        ? "{$need->product->name} — {$need->variant->label} ({$need->variant->sku})"
+                        : "{$need->product->name} ({$need->product->sku})",
+                    'unit' => $need->product->stockUnit?->short_name,
+                    'quantity' => $need->to_buy,
+                    'unit_cost' => round((float) ($need->variant?->estimated_cost ?? $need->product->estimated_cost), 4),
+                ])->values();
+
+            return view('admin.purchases.create', $this->formOptions() + [
+                'requisition' => null,
+                'salesOrder' => $salesOrder,
+                'approvedRequisitions' => collect(),
+                'items' => $items,
+            ]);
+        }
+
         $requisition = $request->filled('from_requisition')
             ? PurchaseRequisition::where('status', 'approved')
                 ->with(['proformaInvoice.party', 'site', 'items.product.stockUnit', 'items.productVariant.attributeValues'])
@@ -82,7 +111,7 @@ class PurchaseController extends Controller implements HasMiddleware
             ]))->values()
             : collect();
 
-        return view('admin.purchases.create', $this->formOptions() + compact('requisition', 'approvedRequisitions', 'items'));
+        return view('admin.purchases.create', $this->formOptions() + compact('requisition', 'approvedRequisitions', 'items') + ['salesOrder' => null]);
     }
 
     /**
@@ -94,19 +123,31 @@ class PurchaseController extends Controller implements HasMiddleware
         [$validated, $rows, $total] = $this->validateOrder($request, true);
 
         $purchase = DB::transaction(function () use ($validated, $rows, $total) {
-            $requisition = PurchaseRequisition::whereKey($validated['purchase_requisition_id'])
-                ->where('status', 'approved')
-                ->lockForUpdate()
-                ->first();
+            $requisition = null;
+            $salesOrder = null;
 
-            if (! $requisition) {
-                throw ValidationException::withMessages(['purchase_requisition_id' => 'This requisition is no longer available to order against.']);
+            if (! empty($validated['sales_order_id'])) {
+                $salesOrder = SalesOrder::whereKey($validated['sales_order_id'])->lockForUpdate()->first();
+
+                if (! $salesOrder?->canSourceDirectly()) {
+                    throw ValidationException::withMessages(['sales_order_id' => 'This Sales Order can no longer be bought for directly — order against its Proforma Invoice instead.']);
+                }
+            } else {
+                $requisition = PurchaseRequisition::whereKey($validated['purchase_requisition_id'])
+                    ->where('status', 'approved')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $requisition) {
+                    throw ValidationException::withMessages(['purchase_requisition_id' => 'This requisition is no longer available to order against.']);
+                }
             }
 
             $purchase = Purchase::create([
                 'purchase_no' => 'PENDING',
-                'purchase_requisition_id' => $requisition->id,
-                'proforma_invoice_id' => $requisition->proforma_invoice_id,
+                'purchase_requisition_id' => $requisition?->id,
+                'proforma_invoice_id' => $requisition?->proforma_invoice_id,
+                'sales_order_id' => $salesOrder?->id,
                 'party_id' => $validated['party_id'] ?? null,
                 'vendor_name' => empty($validated['party_id']) ? $validated['vendor_name'] : null,
                 'vendor_phone' => empty($validated['party_id']) ? ($validated['vendor_phone'] ?? null) : null,
@@ -122,7 +163,7 @@ class PurchaseController extends Controller implements HasMiddleware
 
             $this->createItems($purchase, $rows);
 
-            $requisition->update(['status' => 'ordered']);
+            $requisition?->update(['status' => 'ordered']);
 
             return $purchase;
         });
@@ -134,7 +175,7 @@ class PurchaseController extends Controller implements HasMiddleware
     public function show(Purchase $purchase)
     {
         $purchase->load([
-            'party', 'site', 'creator', 'requisition', 'proformaInvoice.party',
+            'party', 'site', 'creator', 'requisition', 'proformaInvoice.party', 'salesOrder.party',
             'items.product.stockUnit', 'items.productVariant.attributeValues',
             'receipts.site', 'receipts.receivedBy', 'receipts.paidFrom', 'receipts.items.purchaseItem.product',
         ]);
@@ -148,7 +189,7 @@ class PurchaseController extends Controller implements HasMiddleware
             return redirect()->route('purchases.show', $purchase)->with('error', 'Only a pending Purchase Order (nothing received yet) can be edited.');
         }
 
-        $purchase->load(['requisition.proformaInvoice.party', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
+        $purchase->load(['requisition.proformaInvoice.party', 'salesOrder.party', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
 
         $items = $purchase->items->map(fn ($item) => $this->itemRow($item, [
             'quantity' => (float) $item->quantity,
@@ -158,6 +199,7 @@ class PurchaseController extends Controller implements HasMiddleware
         return view('admin.purchases.edit', $this->formOptions() + [
             'purchase' => $purchase,
             'requisition' => $purchase->requisition,
+            'salesOrder' => $purchase->salesOrder,
             'items' => $items,
         ]);
     }
@@ -362,7 +404,7 @@ class PurchaseController extends Controller implements HasMiddleware
 
     public function print(Purchase $purchase)
     {
-        $purchase->load(['party', 'site', 'creator', 'proformaInvoice', 'requisition', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
+        $purchase->load(['party', 'site', 'creator', 'proformaInvoice', 'salesOrder', 'requisition', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
         $company = CompanySetting::current();
 
         return view('admin.purchases.print', compact('purchase', 'company'));
@@ -383,7 +425,8 @@ class PurchaseController extends Controller implements HasMiddleware
     protected function validateOrder(Request $request, bool $creating): array
     {
         $validated = $request->validate([
-            'purchase_requisition_id' => [$creating ? 'required' : 'nullable', 'integer', 'exists:purchase_requisitions,id'],
+            'purchase_requisition_id' => [$creating ? 'required_without:sales_order_id' : 'nullable', 'nullable', 'integer', 'exists:purchase_requisitions,id'],
+            'sales_order_id' => ['nullable', 'integer', 'exists:sales_orders,id'],
             'vendor_type' => ['required', 'in:supplier,one_time'],
             'party_id' => ['nullable', 'required_if:vendor_type,supplier', 'integer', 'exists:parties,id'],
             'vendor_name' => ['nullable', 'required_if:vendor_type,one_time', 'string', 'max:150'],

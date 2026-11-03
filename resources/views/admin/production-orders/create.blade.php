@@ -19,6 +19,9 @@
                 </div>
             </div>
             @if ($line)
+            @if ($source->field === 'sales_order_item_id')
+                <input type="hidden" name="sales_order_item_id" value="{{ $line->id }}">
+            @endif
             <div class="w-56">
                 <x-input-label for="site_id" :value="__('Production Site')" />
                 <div class="mt-1">
@@ -37,7 +40,7 @@
 
     @if (! $line)
         <div class="rounded-2xl bg-white p-10 text-center text-slate-400 shadow-sm ring-1 ring-slate-200">
-            {{ __('Pick a Proforma Invoice line above — production is never started without a controlling PI.') }}
+            {{ __('Pick a Proforma Invoice line above, or start production from a confirmed Sales Order line ("Produce" on the order).') }}
         </div>
     @else
         @php $short = $materials->contains(fn ($m) => $m->required > $m->available + 0.00001); @endphp
@@ -49,11 +52,11 @@
                     <span class="block font-semibold text-slate-800">{{ $line->label() }}</span>
                 </div>
                 <div>
-                    <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Proforma Invoice') }}</span>
-                    <span class="block text-slate-700">{{ $line->proformaInvoice->pi_no }} — {{ $line->proformaInvoice->party->name }}</span>
+                    <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ $source->label }}</span>
+                    <span class="block text-slate-700">{{ $source->no }} — {{ $source->party->name }}</span>
                 </div>
                 <div>
-                    <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('PI Quantity') }}</span>
+                    <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Ordered Quantity') }}</span>
                     <span class="block text-slate-700">{{ $qty($line->quantity) }} {{ $line->product->stockUnit->short_name ?? '' }}</span>
                 </div>
                 <div>
@@ -108,7 +111,7 @@
 
         <form method="POST" action="{{ route('production-orders.store') }}" class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             @csrf
-            <input type="hidden" name="proforma_invoice_item_id" value="{{ $line->id }}">
+            <input type="hidden" name="{{ $source->field }}" value="{{ $line->id }}">
             <input type="hidden" name="site_id" value="{{ $site->id }}">
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
@@ -126,7 +129,7 @@
                 <div>
                     <x-input-label for="due_date" :value="__('Due Date (optional)')" />
                     <x-text-input id="due_date" name="due_date" type="date" class="mt-1 block w-full"
-                                  :value="old('due_date', $line->proformaInvoice->delivery_date?->toDateString())" />
+                                  :value="old('due_date', $source->delivery_date?->toDateString())" />
                     <x-input-error class="mt-2" :messages="$errors->get('due_date')" />
                 </div>
             </div>
@@ -135,7 +138,7 @@
                 <textarea id="note" name="note" rows="2"
                           class="mt-1 block w-full rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500">{{ old('note') }}</textarea>
             </div>
-            <x-input-error class="mb-4" :messages="$errors->get('proforma_invoice_item_id')" />
+            <x-input-error class="mb-4" :messages="$errors->get($source->field)" />
 
             <button type="submit" @disabled($short)
                     class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50">

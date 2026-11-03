@@ -1,0 +1,205 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Party;
+use App\Models\Product;
+use App\Models\ProductionOrder;
+use App\Models\ProformaInvoice;
+use App\Models\Purchase;
+use App\Models\SalesOrder;
+use App\Models\Site;
+use App\Models\User;
+use App\Services\PiFulfillmentPlanner;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
+use Tests\Feature\Concerns\CreatesInventoryFixtures;
+use Tests\TestCase;
+
+/**
+ * Planning a confirmed Sales Order line by line and raising Production
+ * Orders and Purchase Orders straight from it, before any PI — and a PI
+ * issued later taking all of that over.
+ */
+class SalesOrderSourcingTest extends TestCase
+{
+    use CreatesInventoryFixtures;
+    use RefreshDatabase;
+
+    private User $admin;
+
+    private Site $factory;
+
+    private Party $supplier;
+
+    private Product $zipper;
+
+    private Product $tape;
+
+    private Product $label;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->seedBasics();
+        $this->admin = $this->admin();
+        $this->factory = $this->makeSite('Factory', 'FAC-01');
+        $this->supplier = $this->makeSupplier();
+
+        $this->zipper = $this->makeProduct('manufactured');
+        $this->tape = $this->makeProduct('raw_material');
+        $this->label = $this->makeProduct('direct_purchase');
+        $this->zipper->bomItems()->create(['material_id' => $this->tape->id, 'quantity' => 0.5]);
+        $this->stockIn($this->tape, $this->factory, 1000, 2, $this->admin);
+    }
+
+    /** 1000 zippers to make; 300 + 200 labels (two colors) to buy. */
+    private function confirmedOrder(): SalesOrder
+    {
+        $this->actingAs($this->admin)->post(route('sales-orders.store'), [
+            'party_id' => $this->makeCustomer()->id,
+            'order_date' => '2026-11-01',
+            'items' => [
+                ['item' => "product-{$this->zipper->id}", 'quantity' => 1000, 'unit_price' => 1],
+                ['item' => "product-{$this->label->id}", 'quantity' => 300, 'unit_price' => 0.1, 'color' => 'Red'],
+                ['item' => "product-{$this->label->id}", 'quantity' => 200, 'unit_price' => 0.1, 'color' => 'Blue'],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $order = SalesOrder::latest('id')->first();
+        $this->actingAs($this->admin)->post(route('sales-orders.confirm', $order));
+
+        return $order->refresh()->load('items');
+    }
+
+    private function produce(SalesOrder $order, float $quantity): TestResponse
+    {
+        return $this->actingAs($this->admin)->post(route('production-orders.store'), [
+            'sales_order_item_id' => $order->items[0]->id,
+            'site_id' => $this->factory->id,
+            'quantity' => $quantity,
+        ]);
+    }
+
+    private function buy(SalesOrder $order, float $quantity): TestResponse
+    {
+        return $this->actingAs($this->admin)->post(route('purchases.store'), [
+            'sales_order_id' => $order->id,
+            'vendor_type' => 'supplier',
+            'party_id' => $this->supplier->id,
+            'site_id' => $this->factory->id,
+            'order_date' => '2026-11-02',
+            'items' => [['item' => "product-{$this->label->id}", 'quantity' => $quantity, 'unit_cost' => 0.05]],
+        ]);
+    }
+
+    public function test_order_lines_default_to_the_product_type_and_can_be_replanned(): void
+    {
+        $order = $this->confirmedOrder();
+        $this->assertSame(['production', 'purchase', 'purchase'], $order->items->map->plannedFulfillment()->all());
+
+        $this->actingAs($this->admin)->post(route('sales-orders.plan', $order), [
+            'fulfillment' => [$order->items[0]->id => 'stock', $order->items[1]->id => 'stock'],
+        ])->assertSessionHasNoErrors();
+        $this->assertSame(['stock', 'stock', 'purchase'], $order->items()->orderBy('id')->get()->map->plannedFulfillment()->all());
+
+        // A bought-in product can't be planned for production.
+        $this->actingAs($this->admin)->post(route('sales-orders.plan', $order), [
+            'fulfillment' => [$order->items[1]->id => 'production'],
+        ])->assertSessionHasErrors("fulfillment.{$order->items[1]->id}");
+
+        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()->assertSee('Fulfillment Plan');
+    }
+
+    public function test_production_order_is_raised_straight_from_an_order_line(): void
+    {
+        $order = $this->confirmedOrder();
+
+        $this->actingAs($this->admin)->get(route('production-orders.create', ['sales_order_item_id' => $order->items[0]->id]))
+            ->assertOk()->assertSee($order->order_no)->assertSee($this->tape->name);
+
+        $this->produce($order, 600)->assertSessionHasNoErrors();
+
+        $production = ProductionOrder::sole();
+        $this->assertNull($production->proforma_invoice_id);
+        $this->assertSame($order->id, $production->sales_order_id);
+        $this->assertSame($order->items[0]->id, $production->sales_order_item_id);
+        $this->assertEquals(700, $this->balance($this->tape, $this->factory)); // 600 × 0.5 consumed
+        $this->assertEquals(400, $order->items[0]->refresh()->load('productionOrders')->quantityToProduce());
+
+        // Can't produce more than the line still needs.
+        $this->produce($order, 401)->assertSessionHasErrors('quantity');
+
+        $this->actingAs($this->admin)->get(route('production-orders.show', $production))->assertOk()->assertSee($order->order_no);
+        $this->actingAs($this->admin)->get(route('production-orders.index'))->assertOk()->assertSee($order->order_no);
+    }
+
+    public function test_purchase_order_is_raised_straight_from_an_order_without_a_requisition(): void
+    {
+        $order = $this->confirmedOrder();
+
+        // Both label lines are bought together: 300 + 200.
+        $this->actingAs($this->admin)->get(route('purchases.create', ['from_sales_order' => $order->id]))
+            ->assertOk()->assertSee($this->label->name)->assertSee('500');
+
+        $this->buy($order, 500)->assertSessionHasNoErrors();
+
+        $purchase = Purchase::sole();
+        $this->assertNull($purchase->purchase_requisition_id);
+        $this->assertNull($purchase->proforma_invoice_id);
+        $this->assertSame($order->id, $purchase->sales_order_id);
+        $this->assertSame(0.0, $order->refresh()->purchaseNeeds()->sum('to_buy'));
+
+        $this->actingAs($this->admin)->get(route('purchases.show', $purchase))->assertOk()->assertSee($order->order_no);
+        $this->actingAs($this->admin)->get(route('purchases.index'))->assertOk()->assertSee($order->order_no);
+        $this->actingAs($this->admin)->get(route('purchases.print', $purchase))->assertOk();
+        $this->actingAs($this->admin)->get(route('purchases.edit', $purchase))->assertOk();
+        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()->assertSee($purchase->purchase_no);
+
+        // Goods receipt works as for any PO.
+        $line = $purchase->items()->first();
+        $this->actingAs($this->admin)->post(route('purchases.receive.store', $purchase), [
+            'received_date' => '2026-11-03',
+            'site_id' => $this->factory->id,
+            'items' => [$line->id => ['quantity' => 500]],
+        ])->assertSessionHasNoErrors();
+        $this->assertEquals(500, $this->balance($this->label, $this->factory));
+    }
+
+    public function test_a_pi_issued_later_takes_over_the_plan_production_and_purchases(): void
+    {
+        $order = $this->confirmedOrder();
+        $this->actingAs($this->admin)->post(route('sales-orders.plan', $order), [
+            'fulfillment' => [$order->items[2]->id => 'stock'],
+        ]);
+        $this->produce($order, 1000)->assertSessionHasNoErrors();
+        $this->buy($order, 300)->assertSessionHasNoErrors();
+
+        $this->actingAs($this->admin)->post(route('proforma-invoices.store'), $this->piPayload($order->refresh()))->assertSessionHasNoErrors();
+        $invoice = ProformaInvoice::with('items')->sole();
+        // The order's plan is copied onto the PI.
+        $this->assertSame(['production', 'purchase', 'stock'], $invoice->items->sortBy('id')->pluck('fulfillment')->values()->all());
+
+        // Once on a PI, the order is sourced through the PI.
+        $this->buy($order, 1)->assertSessionHasErrors('sales_order_id');
+
+        $this->actingAs($this->admin)->post(route('proforma-invoices.issue', $invoice))->assertSessionHasNoErrors();
+
+        $invoice->refresh()->load('items.productionOrders');
+        $this->assertSame('in_progress', $invoice->status);
+        $production = ProductionOrder::sole();
+        $this->assertSame($invoice->id, $production->proforma_invoice_id);
+        $this->assertSame($invoice->items->firstWhere('sales_order_item_id', $order->items[0]->id)->id, $production->proforma_invoice_item_id);
+        $this->assertSame($invoice->id, Purchase::sole()->proforma_invoice_id);
+
+        // Nothing left to produce, and the 300 labels already bought aren't suggested again.
+        $this->assertEquals(0, $invoice->items->firstWhere('fulfillment', 'production')->quantityToProduce());
+        $suggestions = app(PiFulfillmentPlanner::class)->purchaseSuggestions($invoice)
+            ->mapWithKeys(fn ($row) => [$row->product->id => $row->quantity]);
+        $this->assertArrayNotHasKey($this->label->id, $suggestions->all());
+        $this->assertArrayNotHasKey($this->tape->id, $suggestions->all());
+
+        $this->actingAs($this->admin)->get(route('proforma-invoices.show', $invoice))->assertOk()
+            ->assertSee($production->production_no)->assertSee(Purchase::sole()->purchase_no);
+    }
+}

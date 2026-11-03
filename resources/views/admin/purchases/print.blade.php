@@ -38,7 +38,7 @@
                 <p class="font-semibold text-slate-800">{{ $purchase->site->name }}</p>
                 @if ($purchase->site->address)<p class="text-slate-500">{{ $purchase->site->address }}</p>@endif
                 @if ($purchase->expected_date)<p class="text-slate-600">{{ __('Expected by') }} {{ $purchase->expected_date->format('d M, Y') }}</p>@endif
-                <p class="text-slate-500">{{ __('Ref.') }} {{ $purchase->proformaInvoice->pi_no }} / {{ $purchase->requisition->requisition_no }}</p>
+                <p class="text-slate-500">{{ __('Ref.') }} {{ $purchase->sourceNo() }}{{ $purchase->requisition ? ' / '.$purchase->requisition->requisition_no : '' }}</p>
             </div>
         </div>
 
