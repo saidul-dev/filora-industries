@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\PicksProducts;
 use App\Http\Controllers\Concerns\WritesSalesOrders;
 use App\Http\Controllers\Controller;
+use App\Models\CompanySetting;
 use App\Models\Party;
 use App\Models\ProformaInvoiceItem;
 use App\Models\SalesOrder;
@@ -30,7 +31,7 @@ class SalesOrderController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:sales.view', only: ['index', 'show']),
+            new Middleware('permission:sales.view', only: ['index', 'show', 'print']),
             new Middleware('permission:sales.create', only: ['create', 'store']),
             new Middleware('permission:sales.edit', only: ['edit', 'update', 'plan']),
             new Middleware('permission:sales.delete', only: ['destroy']),
@@ -91,6 +92,16 @@ class SalesOrderController extends Controller implements HasMiddleware
         ]);
 
         return view('admin.sales-orders.show', ['order' => $salesOrder]);
+    }
+
+    public function print(SalesOrder $salesOrder)
+    {
+        $this->authorizeVisible($salesOrder);
+
+        $salesOrder->load(['party', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
+        $company = CompanySetting::current();
+
+        return view('admin.sales-orders.print', ['order' => $salesOrder, 'company' => $company]);
     }
 
     public function edit(SalesOrder $salesOrder)
