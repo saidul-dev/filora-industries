@@ -30,7 +30,7 @@
                 <p class="text-xs text-slate-400">{{ __('Who the order is from and when they need it.') }}</p>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 px-6 pb-5 md:grid-cols-2 {{ $salesPeople->isNotEmpty() ? 'xl:grid-cols-4' : 'xl:grid-cols-3' }}">
+            <div class="grid grid-cols-1 gap-4 px-6 pb-5 md:grid-cols-2 xl:grid-cols-3">
                 <div>
                     <div class="flex h-5 items-center justify-between gap-2">
                         <x-input-label for="party_id" :value="__('Customer')" />
@@ -45,19 +45,6 @@
                         <p class="mt-1 text-xs text-amber-600">{{ __('No customers yet — use “New Customer” to add one.') }}</p>
                     @endif
                 </div>
-
-                @if ($salesPeople->isNotEmpty())
-                <div>
-                    <x-input-label for="sales_person_id" :value="__('Responsible Sales Person')" class="flex h-5 items-center" />
-                    <select id="sales_person_id" name="sales_person_id" class="mt-1 {{ $field }}">
-                        <option value="">{{ __('— None —') }}</option>
-                        @foreach ($salesPeople as $person)
-                            <option value="{{ $person->id }}" @selected(old('sales_person_id', $order->sales_person_id ?? null) == $person->id)>{{ $person->name }}</option>
-                        @endforeach
-                    </select>
-                    <x-input-error class="mt-2" :messages="$errors->get('sales_person_id')" />
-                </div>
-                @endif
 
                 <div>
                     <x-input-label for="buyer_name" :value="__('Buyer / Brand')" class="flex h-5 items-center" />

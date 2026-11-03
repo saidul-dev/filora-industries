@@ -111,14 +111,14 @@
                                 <input type="number" step="0.0001" min="0" name="items[{{ $line->item->id }}][unit_price]"
                                        value="{{ old("items.{$line->item->id}.unit_price", $line->item->unit_price !== null ? (float) $line->item->unit_price : '') }}"
                                        placeholder="{{ __('Required') }}" @disabled($max <= 0)
-                                       class="w-32 rounded-lg text-sm focus:border-accent-500 focus:ring-accent-500 disabled:bg-slate-100 {{ $line->item->unit_price === null ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300' }}">
+                                       class="w-32 rounded-lg py-1.5 text-sm focus:border-accent-500 focus:ring-accent-500 disabled:bg-slate-100 {{ $line->item->unit_price === null ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300' }}">
                                 <x-input-error class="mt-1" :messages="$errors->get('items.'.$line->item->id.'.unit_price')" />
                             </td>
                             @endif
                             <td class="px-5 py-3">
                                 <input type="number" step="0.0001" min="0" max="{{ $max }}" name="items[{{ $line->item->id }}][quantity]"
                                        value="{{ old("items.{$line->item->id}.quantity", $max) }}" @disabled($max <= 0)
-                                       class="w-36 rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500 disabled:bg-slate-100">
+                                       class="w-36 rounded-lg border-slate-300 py-1.5 text-sm focus:border-accent-500 focus:ring-accent-500 disabled:bg-slate-100">
                                 <x-input-error class="mt-1" :messages="$errors->get('items.'.$line->item->id.'.quantity')" />
                             </td>
                         </tr>
@@ -131,38 +131,53 @@
             <x-input-error class="mb-4" :messages="$errors->get('proforma_invoice_id')" />
             <x-input-error class="mb-4" :messages="$errors->get('sales_order_id')" />
 
-            <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+            @php
+                $field = 'mt-1 block w-full rounded-lg border-slate-300 py-2 text-sm shadow-sm focus:border-accent-500 focus:ring-accent-500';
+                $backUrl = $byOrder ? route('sales-orders.show', $order) : route('proforma-invoices.show', $invoice);
+            @endphp
+            <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+                <div class="px-6 pt-5 pb-4">
+                    <h3 class="font-bold text-brand-900">{{ __('Challan Details') }}</h3>
+                    <p class="text-xs text-slate-400">{{ __('Printed on the delivery challan. Prices are in USD; the ledger is posted in BDT at the rate given here.') }}</p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 px-6 pb-5 md:grid-cols-2 xl:grid-cols-4">
                     <div>
                         <x-input-label for="delivery_date" :value="__('Delivery Date')" />
-                        <x-text-input id="delivery_date" name="delivery_date" type="date" class="mt-1 block w-full" :value="old('delivery_date', now()->toDateString())" required />
+                        <input id="delivery_date" name="delivery_date" type="date" class="{{ $field }}" value="{{ old('delivery_date', now()->toDateString()) }}" required>
                         <x-input-error class="mt-2" :messages="$errors->get('delivery_date')" />
                     </div>
                     <div>
                         <x-input-label for="usd_rate" :value="__('USD Rate (BDT per 1 USD)')" />
-                        <x-text-input id="usd_rate" name="usd_rate" type="number" step="0.0001" min="0.0001" class="mt-1 block w-full"
-                                      :value="old('usd_rate', $usdRate)" required />
-                        <p class="mt-1 text-xs text-slate-400">{{ __('Prices are in USD; the ledger is posted in BDT at this rate.') }}</p>
+                        <input id="usd_rate" name="usd_rate" type="number" step="0.0001" min="0.0001" class="{{ $field }}"
+                               value="{{ old('usd_rate', $usdRate) }}" placeholder="{{ __('e.g. 122.50') }}" required>
                         <x-input-error class="mt-2" :messages="$errors->get('usd_rate')" />
                     </div>
                     <div>
                         <x-input-label for="vehicle_no" :value="__('Vehicle No. (optional)')" />
-                        <x-text-input id="vehicle_no" name="vehicle_no" type="text" class="mt-1 block w-full" :value="old('vehicle_no')" />
+                        <input id="vehicle_no" name="vehicle_no" type="text" class="{{ $field }}" value="{{ old('vehicle_no') }}" placeholder="{{ __('e.g. DHAKA-METRO-TA-11-2233') }}">
+                        <x-input-error class="mt-2" :messages="$errors->get('vehicle_no')" />
                     </div>
                     <div>
                         <x-input-label for="receiver_name" :value="__('Received By (optional)')" />
-                        <x-text-input id="receiver_name" name="receiver_name" type="text" class="mt-1 block w-full" :value="old('receiver_name')" />
+                        <input id="receiver_name" name="receiver_name" type="text" class="{{ $field }}" value="{{ old('receiver_name') }}">
+                        <x-input-error class="mt-2" :messages="$errors->get('receiver_name')" />
+                    </div>
+                    <div class="md:col-span-2 xl:col-span-4">
+                        <x-input-label for="note" :value="__('Note (optional)')" />
+                        <textarea id="note" name="note" rows="2" class="{{ $field }}">{{ old('note') }}</textarea>
+                        <x-input-error class="mt-2" :messages="$errors->get('note')" />
                     </div>
                 </div>
-                <div class="mb-5 max-w-2xl">
-                    <x-input-label for="note" :value="__('Note (optional)')" />
-                    <textarea id="note" name="note" rows="2"
-                              class="mt-1 block w-full rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500">{{ old('note') }}</textarea>
+
+                <div class="flex flex-wrap items-center justify-end gap-3 rounded-b-2xl border-t border-slate-100 bg-slate-50/60 px-6 py-4">
+                    <p class="mr-auto text-xs text-slate-400">{{ __('Posting moves the goods out of :site stock and records the sale — it cannot be edited afterwards.', ['site' => $site->name]) }}</p>
+                    <a href="{{ $backUrl }}" class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">{{ __('Cancel') }}</a>
+                    <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-5 py-2 text-sm font-semibold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:ring-offset-2">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>
+                        {{ __('Post Delivery') }}
+                    </button>
                 </div>
-                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>
-                    {{ __('Post Delivery') }}
-                </button>
             </div>
         </form>
     @endif
