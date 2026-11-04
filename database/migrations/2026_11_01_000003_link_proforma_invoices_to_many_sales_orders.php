@@ -17,7 +17,8 @@ return new class extends Migration
             $table->foreignId('sales_order_id')->constrained()->restrictOnDelete();
             $table->timestamps();
 
-            $table->unique(['proforma_invoice_id', 'sales_order_id']);
+            // Named explicitly: the generated name passes MySQL's 64-character limit.
+            $table->unique(['proforma_invoice_id', 'sales_order_id'], 'pi_sales_order_unique');
         });
 
         $now = now();
