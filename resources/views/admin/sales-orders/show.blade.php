@@ -363,10 +363,24 @@
         <form method="POST" action="{{ route('sales-orders.plan', $order) }}">
             @csrf
             <div class="overflow-x-auto border-y border-slate-100">
-            <table class="w-full min-w-[820px] text-sm">
+            @php
+                // Finished goods on hand across all sites, per product / variant.
+                $onHand = \App\Models\StockMovement::query()
+                    ->whereIn('product_id', $order->items->pluck('product_id')->unique())
+                    ->selectRaw("product_id, product_variant_id, SUM(CASE WHEN direction = 'in' THEN quantity ELSE -quantity END) as balance")
+                    ->groupBy('product_id', 'product_variant_id')
+                    ->get()
+                    ->mapWithKeys(fn ($row) => [$row->product_id.':'.($row->product_variant_id ?? '') => (float) $row->balance]);
+            @endphp
+            <table class="w-full min-w-[1100px] text-sm">
                 <thead>
-                    <tr class="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                    <tr class="whitespace-nowrap bg-slate-50 text-left text-xs font-semibold text-slate-500">
                         <th class="py-2.5 pl-6 pr-2">{{ __('Product') }}</th>
+                        <th class="px-2 py-2.5">{{ __('Style') }}</th>
+                        <th class="px-2 py-2.5">{{ __('Color') }}</th>
+                        <th class="px-2 py-2.5 text-right">{{ __('Size / Length (m)') }}</th>
+                        <th class="px-2 py-2.5 text-right">{{ __('Ordered') }}</th>
+                        <th class="px-2 py-2.5 text-right">{{ __('Available') }}</th>
                         <th class="w-28 px-2 py-2.5 text-right">{{ __('Still to deliver') }}</th>
                         <th class="w-56 px-2 py-2.5">{{ __('Fulfilled by') }}</th>
                         <th class="w-56 py-2.5 pl-2 pr-6">{{ __('Next step') }}</th>
@@ -374,12 +388,22 @@
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     @foreach ($order->items as $item)
-                    @php $plan = $item->plannedFulfillment(); @endphp
+                    @php
+                        $plan = $item->plannedFulfillment();
+                        $unitName = $item->product->stockUnit->short_name ?? '';
+                        $available = $onHand[$item->product_id.':'.($item->product_variant_id ?? '')] ?? 0.0;
+                    @endphp
                     <tr class="hover:bg-slate-50/70">
                         <td class="py-2.5 pl-6 pr-2">
                             <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
-                            @if ($item->lineDetails())<span class="block text-xs text-slate-500">{{ $item->lineDetails() }}</span>@endif
+                            <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}{{ $item->remarks ? ' · '.$item->remarks : '' }}</span>
                         </td>
+                        <td class="px-2 py-2.5 text-slate-700">{{ $item->style ?: '—' }}</td>
+                        <td class="px-2 py-2.5 text-slate-700">{{ $item->color ?: '—' }}</td>
+                        <td class="px-2 py-2.5 text-right tabular-nums text-slate-700">{{ $item->length_per_unit !== null ? rtrim(rtrim(number_format($item->length_per_unit, 2), '0'), '.') : '—' }}</td>
+                        <td class="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-slate-700">{{ $qty($item->quantity) }} {{ $unitName }}</td>
+                        <td class="whitespace-nowrap px-2 py-2.5 text-right tabular-nums font-semibold {{ $available <= 0 ? 'text-slate-400' : ($available + 0.00001 >= $item->remaining() ? 'text-emerald-600' : 'text-amber-600') }}"
+                            title="{{ __('Finished stock on hand across all sites') }}">{{ $qty(max($available, 0)) }}</td>
                         <td class="px-2 py-2.5 text-right tabular-nums text-slate-700">{{ $qty($item->remaining()) }}</td>
                         <td class="px-2 py-2">
                             @if ($user->can('sales.edit'))
