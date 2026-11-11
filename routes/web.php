@@ -117,6 +117,7 @@ Route::prefix('admin')->group(function () {
         Route::post('/sales-orders/{salesOrder}/confirm', [SalesOrderController::class, 'confirm'])->name('sales-orders.confirm');
         Route::post('/sales-orders/{salesOrder}/cancel', [SalesOrderController::class, 'cancel'])->name('sales-orders.cancel');
         Route::post('/sales-orders/{salesOrder}/plan', [SalesOrderController::class, 'plan'])->name('sales-orders.plan');
+        Route::post('/sales-orders/{salesOrder}/items/{item}/split', [SalesOrderController::class, 'split'])->name('sales-orders.split');
         Route::get('/sales-orders/{salesOrder}/print', [SalesOrderController::class, 'print'])->name('sales-orders.print');
 
         Route::resource('proforma-invoices', ProformaInvoiceController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update'])

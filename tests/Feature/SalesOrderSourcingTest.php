@@ -250,6 +250,49 @@ class SalesOrderSourcingTest extends TestCase
         $this->assertEquals(500, $this->balance($this->label, $this->factory));
     }
 
+    public function test_a_line_can_be_split_to_produce_part_and_buy_the_rest(): void
+    {
+        $order = $this->confirmedOrder();
+        $zipperLine = $order->items[0]; // 1000 zippers @ 1.00, planned for production
+        $total = (float) $order->total_amount;
+
+        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()
+            ->assertSee('Split line');
+
+        $this->actingAs($this->admin)->post(route('sales-orders.split', [$order, $zipperLine]), [
+            'split_item_id' => $zipperLine->id,
+            'split_quantity' => 400,
+            'split_fulfillment' => 'purchase',
+        ])->assertSessionHasNoErrors();
+
+        $lines = $order->items()->where('product_id', $this->zipper->id)->orderBy('id')->get();
+        $this->assertCount(2, $lines);
+        $this->assertEquals([600, 400], $lines->map(fn ($l) => (float) $l->quantity)->all());
+        $this->assertSame(['production', 'purchase'], $lines->map->plannedFulfillment()->all());
+        $this->assertEquals([600, 400], $lines->map(fn ($l) => (float) $l->subtotal)->all());
+        $this->assertEquals($total, (float) $order->refresh()->total_amount);
+
+        // 600 produced, 400 bought.
+        $this->produce($order, 600)->assertSessionHasNoErrors();
+        $this->assertEquals(400, $order->refresh()->purchaseNeeds()->firstWhere('product.id', $this->zipper->id)->to_buy);
+
+        // A line already in production can't be split; nor can the whole line be split off.
+        $this->actingAs($this->admin)->post(route('sales-orders.split', [$order, $lines[0]]), [
+            'split_quantity' => 100, 'split_fulfillment' => 'stock',
+        ])->assertSessionHas('error');
+        $this->actingAs($this->admin)->post(route('sales-orders.split', [$order, $lines[1]]), [
+            'split_quantity' => 400, 'split_fulfillment' => 'stock',
+        ])->assertSessionHasErrorsIn('split', 'split_quantity');
+        // A bought-in label can't have a part planned for production.
+        $this->actingAs($this->admin)->post(route('sales-orders.split', [$order, $order->items()->where('product_id', $this->label->id)->first()]), [
+            'split_quantity' => 10, 'split_fulfillment' => 'production',
+        ])->assertSessionHasErrorsIn('split', 'split_fulfillment');
+
+        $this->actingAs($this->userWithRole('HR'))->post(route('sales-orders.split', [$order, $lines[1]]), [
+            'split_quantity' => 1, 'split_fulfillment' => 'stock',
+        ])->assertForbidden();
+    }
+
     public function test_po_lines_keep_the_order_lines_style_and_color(): void
     {
         $order = $this->confirmedOrder();

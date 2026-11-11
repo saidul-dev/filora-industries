@@ -9,6 +9,7 @@ use App\Models\CompanySetting;
 use App\Models\Party;
 use App\Models\ProformaInvoiceItem;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderItem;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -33,7 +34,7 @@ class SalesOrderController extends Controller implements HasMiddleware
         return [
             new Middleware('permission:sales.view', only: ['index', 'show', 'print']),
             new Middleware('permission:sales.create', only: ['create', 'store']),
-            new Middleware('permission:sales.edit', only: ['edit', 'update', 'plan']),
+            new Middleware('permission:sales.edit', only: ['edit', 'update', 'plan', 'split']),
             new Middleware('permission:sales.delete', only: ['destroy']),
             new Middleware('permission:sales.approve', only: ['confirm', 'cancel']),
         ];
@@ -218,6 +219,85 @@ class SalesOrderController extends Controller implements HasMiddleware
         }
 
         return back()->with('success', "Fulfillment plan for {$salesOrder->order_no} saved.");
+    }
+
+    /**
+     * Split a line in two so part of it can be fulfilled another way — e.g.
+     * 300 produced and 200 bought. The new line copies style, color, price
+     * and remarks; the order total stays the same (bar cent rounding).
+     * Only for a line nothing has happened to yet.
+     */
+    public function split(Request $request, SalesOrder $salesOrder, SalesOrderItem $item)
+    {
+        $this->authorizeVisible($salesOrder);
+        abort_unless($item->sales_order_id === $salesOrder->id, 404);
+
+        if (! $salesOrder->canSourceDirectly()) {
+            return back()->with('error', 'Only a confirmed order not yet on a Proforma Invoice can have its lines split.');
+        }
+
+        $item->load(['product', 'productionItems.productionOrder']);
+
+        if ((float) $item->delivered_quantity > 0) {
+            return back()->with('error', "{$item->label()} already has deliveries — it can't be split.");
+        }
+        if ($live = $item->liveProductionOrder()) {
+            return back()->with('error', "{$item->label()} is on Production Order {$live->production_no} — cancel it first to split the line.");
+        }
+
+        $quantity = (float) $item->quantity;
+        $validated = $request->validateWithBag('split', [
+            'split_quantity' => ['required', 'numeric', 'gt:0', 'lt:'.$quantity],
+            'split_fulfillment' => ['required', Rule::in(array_keys(ProformaInvoiceItem::FULFILLMENTS))],
+        ], [
+            'split_quantity.lt' => 'Split off less than the whole line ('.rtrim(rtrim(number_format($quantity, 4), '0'), '.').').',
+        ]);
+
+        if ($validated['split_fulfillment'] === 'production' && ! $item->product->isManufactured()) {
+            throw ValidationException::withMessages(['split_fulfillment' => "{$item->product->name} is not a Manufactured product — it can't be produced."])
+                ->errorBag('split');
+        }
+
+        $splitQty = round((float) $validated['split_quantity'], 4);
+        $keepQty = round($quantity - $splitQty, 4);
+        $price = $item->unit_price;
+        $subtotalFor = fn (float $qty) => $price === null ? 0 : round($qty * (float) $price, 2);
+
+        $new = DB::transaction(function () use ($salesOrder, $item, $splitQty, $keepQty, $subtotalFor, $validated) {
+            // The line being split keeps its plan; pin it so it doesn't drift with the default.
+            $item->update([
+                'quantity' => $keepQty,
+                'subtotal' => $subtotalFor($keepQty),
+                'fulfillment' => $item->plannedFulfillment(),
+            ]);
+
+            $new = $salesOrder->items()->create([
+                'product_id' => $item->product_id,
+                'product_variant_id' => $item->product_variant_id,
+                'style' => $item->style,
+                'color' => $item->color,
+                'length_per_unit' => $item->length_per_unit,
+                'remarks' => $item->remarks,
+                'quantity' => $splitQty,
+                'unit_price' => $item->unit_price,
+                'subtotal' => $subtotalFor($splitQty),
+                'delivered_quantity' => 0,
+                'fulfillment' => $validated['split_fulfillment'],
+            ]);
+
+            $subtotal = round((float) $salesOrder->items()->sum('subtotal'), 2);
+            $salesOrder->update([
+                'subtotal_amount' => $subtotal,
+                'total_amount' => round($subtotal - (float) $salesOrder->discount_amount, 2),
+            ]);
+
+            return $new;
+        });
+
+        $qty = fn ($v) => rtrim(rtrim(number_format($v, 4), '0'), '.');
+
+        return back()->with('success', "{$item->label()} split: {$qty($keepQty)} by ".strtolower(ProformaInvoiceItem::FULFILLMENTS[$item->fulfillment])
+            ." and {$qty($splitQty)} by ".strtolower(ProformaInvoiceItem::FULFILLMENTS[$new->fulfillment]).'.');
     }
 
     public function cancel(SalesOrder $salesOrder)

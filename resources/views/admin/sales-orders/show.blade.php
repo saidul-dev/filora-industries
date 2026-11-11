@@ -355,7 +355,26 @@
         $user = auth()->user();
     @endphp
     @if ($canPlan || $order->productionOrders->isNotEmpty() || $order->purchases->isNotEmpty())
-    <div id="fulfillment-plan" class="mt-4 scroll-mt-24 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+    @php
+        $splitErrors = $errors->getBag('split');
+        // What the Split dialog needs about a line; the part split off
+        // defaults to the "other" way (produced line → buy the rest).
+        $splitLine = fn ($item) => [
+            'id' => $item->id,
+            'action' => route('sales-orders.split', [$order, $item]),
+            'label' => $item->label().($item->lineDetails() ? ' · '.$item->lineDetails() : ''),
+            'quantity' => (float) $item->quantity,
+            'unit' => $item->product->stockUnit->short_name ?? '',
+            'manufactured' => $item->product->isManufactured(),
+            'target' => $item->plannedFulfillment() === 'production' ? 'purchase' : ($item->product->isManufactured() ? 'production' : 'stock'),
+        ];
+        $reopenSplit = $splitErrors->any() ? $order->items->firstWhere('id', (int) old('split_item_id')) : null;
+    @endphp
+    <div id="fulfillment-plan" class="mt-4 scroll-mt-24 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200"
+         x-data="{
+            split: {{ $reopenSplit ? Js::from(array_merge($splitLine($reopenSplit), ['target' => old('split_fulfillment')])) : 'null' }},
+            openSplit(line) { this.split = line; this.$nextTick(() => this.$refs.splitQty?.focus()); },
+         }">
         <div class="flex flex-wrap items-end justify-between gap-4 px-6 pt-5 pb-4">
             <div>
                 <h3 class="font-bold text-brand-900">{{ __('Fulfillment Plan') }}</h3>
@@ -467,6 +486,14 @@
                             @else
                                 <span class="text-slate-500">{{ __('Deliver from stock') }}</span>
                             @endif
+                            @if ($user->can('sales.edit') && (float) $item->delivered_quantity <= 0 && ! $item->liveProductionOrder() && (float) $item->quantity > 0.0001)
+                                <button type="button"
+                                        @click="openSplit({{ Js::from($splitLine($item)) }})"
+                                        class="mt-1 block font-semibold text-slate-500 hover:text-brand-800"
+                                        title="{{ __('Split this line to fulfil part of it another way') }}">
+                                    {{ __('Split line') }}
+                                </button>
+                            @endif
                         </td>
                     </tr>
                     @endforeach
@@ -479,6 +506,54 @@
             </div>
             @endif
         </form>
+
+        @if ($user->can('sales.edit'))
+        {{-- Split a line: part of it goes another way (e.g. 300 produced, 200 bought). --}}
+        <template x-if="split">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" @keydown.escape.window="split = null">
+            <form method="POST" :action="split?.action" @click.outside="split = null"
+                  class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200"
+                  x-data="{ qty: @js(old('split_quantity')) }">
+                @csrf
+                <input type="hidden" name="split_item_id" :value="split?.id">
+                <h3 class="font-bold text-brand-900">{{ __('Split Line') }}</h3>
+                <p class="mt-1 text-sm text-slate-600" x-text="split?.label"></p>
+                <p class="mt-1 text-xs text-slate-400">
+                    {{ __('Ordered') }}: <span class="font-semibold text-slate-600" x-text="`${split?.quantity} ${split?.unit || ''}`"></span>
+                    — {{ __('the part you split off becomes its own line with the same style, color and price.') }}
+                </p>
+
+                <div class="mt-4 grid grid-cols-2 gap-3">
+                    <div>
+                        <x-input-label for="split_quantity" :value="__('Quantity to split off')" />
+                        <input id="split_quantity" x-ref="splitQty" type="number" name="split_quantity" step="0.0001" min="0.0001"
+                               :max="split ? split.quantity - 0.0001 : null" x-model.number="qty" required
+                               class="mt-1 block w-full rounded-lg border-slate-300 text-right text-sm focus:border-accent-500 focus:ring-accent-500">
+                    </div>
+                    <div>
+                        <x-input-label for="split_fulfillment" :value="__('Fulfilled by')" />
+                        <select id="split_fulfillment" name="split_fulfillment" x-model="split.target"
+                                class="mt-1 block w-full rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500">
+                            @foreach (\App\Models\ProformaInvoiceItem::FULFILLMENTS as $key => $label)
+                            <option value="{{ $key }}" @if ($key === 'production') :disabled="! split?.manufactured" @endif>{{ __($label) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <p class="mt-2 text-xs text-slate-500" x-show="split && qty > 0 && qty < split.quantity">
+                    {{ __('Result') }}: <span class="font-semibold" x-text="+(split.quantity - qty).toFixed(4)"></span> {{ __('stays on this line') }},
+                    <span class="font-semibold" x-text="+(+qty).toFixed(4)"></span> {{ __('on the new line') }}.
+                </p>
+                <x-input-error class="mt-2" :messages="$splitErrors->all()" />
+
+                <div class="mt-5 flex justify-end gap-2">
+                    <button type="button" @click="split = null" class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">{{ __('Cancel') }}</button>
+                    <button type="submit" class="rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">{{ __('Split Line') }}</button>
+                </div>
+            </form>
+        </div>
+        </template>
+        @endif
         @endif
 
         @if ($order->productionOrders->isNotEmpty() || $order->purchases->isNotEmpty())
