@@ -189,16 +189,17 @@ Alpine.data('transferCart', (initial) => ({
     },
 }));
 
+let purchaseLineUid = 0;
 Alpine.data('purchaseCart', (initial) => ({
     itemOptions: initial.itemOptions || [],
-    items: initial.items || [],
+    // Each line keeps its own uid: a product can repeat with another style / color.
+    items: (initial.items || []).map((i) => ({ style: '', color: '', ...i, uid: ++purchaseLineUid })),
     query: '',
     open: false,
     discount: initial.discount ?? '',
 
     get filtered() {
-        const chosen = new Set(this.items.map((i) => i.id));
-        const pool = this.itemOptions.filter((o) => !chosen.has(o.id));
+        const pool = this.itemOptions;
         if (!this.query) return pool;
         const q = this.query.toLowerCase();
         return pool.filter((o) => o.name.toLowerCase().includes(q));
@@ -214,9 +215,12 @@ Alpine.data('purchaseCart', (initial) => ({
 
     addItem(opt) {
         this.items.push({
+            uid: ++purchaseLineUid,
             id: opt.id,
             name: opt.name,
             unit: opt.unit,
+            style: '',
+            color: '',
             quantity: '',
             unit_cost: opt.cost || '',
         });
@@ -224,8 +228,8 @@ Alpine.data('purchaseCart', (initial) => ({
         this.open = false;
     },
 
-    removeItem(id) {
-        this.items = this.items.filter((i) => i.id !== id);
+    removeItem(uid) {
+        this.items = this.items.filter((i) => i.uid !== uid);
     },
 }));
 

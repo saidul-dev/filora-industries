@@ -47,6 +47,8 @@
                 <tr class="border-y-2 border-brand-800 text-left text-xs uppercase tracking-wide text-brand-800">
                     <th class="py-2 pr-2 font-semibold w-10">#</th>
                     <th class="py-2 pr-2 font-semibold">{{ __('Item') }}</th>
+                    <th class="py-2 px-2 font-semibold">{{ __('Style') }}</th>
+                    <th class="py-2 px-2 font-semibold">{{ __('Color') }}</th>
                     <th class="py-2 px-2 font-semibold text-right">{{ __('Quantity') }}</th>
                     <th class="py-2 px-2 font-semibold text-right">{{ __('Unit Cost') }}</th>
                     <th class="py-2 pl-2 font-semibold text-right">{{ __('Amount') }}</th>
@@ -60,6 +62,8 @@
                         <span class="font-semibold text-slate-800">{{ $item->label() }}</span>
                         <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
                     </td>
+                    <td class="py-2 px-2 text-slate-700">{{ $item->style ?: '—' }}</td>
+                    <td class="py-2 px-2 text-slate-700">{{ $item->color ?: '—' }}</td>
                     <td class="py-2 px-2 text-right text-slate-700">{{ rtrim(rtrim(number_format($item->quantity, 4), '0'), '.') }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
                     <td class="py-2 px-2 text-right text-slate-700">{{ number_format($item->unit_cost, 2) }}</td>
                     <td class="py-2 pl-2 text-right font-semibold text-slate-800">{{ number_format($item->subtotal, 2) }}</td>
@@ -68,7 +72,7 @@
             </tbody>
             <tfoot>
                 <tr class="border-t-2 border-slate-300">
-                    <td colspan="4" class="pt-3 text-right text-xs font-bold uppercase tracking-wide text-brand-800">{{ __('Total') }}</td>
+                    <td colspan="6" class="pt-3 text-right text-xs font-bold uppercase tracking-wide text-brand-800">{{ __('Total') }}</td>
                     <td class="pt-3 text-right text-lg font-black text-brand-900">{{ number_format($purchase->total_amount, 2) }}</td>
                 </tr>
             </tfoot>

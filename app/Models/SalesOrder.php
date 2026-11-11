@@ -186,25 +186,51 @@ class SalesOrder extends Model
     {
         $this->loadMissing(['items.product', 'items.productVariant', 'purchases.items']);
 
-        $ordered = $this->purchases->flatMap->items->groupBy(fn (PurchaseItem $item) => $item->product_id.':'.($item->product_variant_id ?? ''))
+        // What POs raised from this order already cover, per product / variant / style / color.
+        $available = $this->purchases->flatMap->items->groupBy(fn (PurchaseItem $item) => static::purchaseKey($item))
             ->map(fn ($items) => $items->sum(fn (PurchaseItem $item) => $this->purchases->firstWhere('id', $item->purchase_id)->status === 'cancelled'
                 ? (float) $item->received_quantity
-                : (float) $item->quantity));
+                : (float) $item->quantity))
+            ->all();
 
         return $this->items->filter(fn (SalesOrderItem $item) => $item->plannedFulfillment() === 'purchase' && $item->remaining() > 0)
-            ->groupBy(fn (SalesOrderItem $item) => $item->product_id.':'.($item->product_variant_id ?? ''))
-            ->map(function ($lines, $key) use ($ordered) {
+            ->groupBy(fn (SalesOrderItem $item) => static::purchaseKey($item))
+            ->map(function ($lines, $key) use (&$available) {
+                $first = $lines->first();
                 $needed = round($lines->sum(fn (SalesOrderItem $item) => $item->remaining()), 4);
-                $covered = (float) ($ordered[$key] ?? 0);
+
+                // Bought for exactly this style / color first, then from PO
+                // lines that named neither (older POs bought per product).
+                $covered = 0.0;
+                foreach (array_unique([$key, static::purchaseKey($first, false)]) as $pool) {
+                    $take = min($available[$pool] ?? 0, $needed - $covered);
+                    if ($take > 0) {
+                        $available[$pool] -= $take;
+                        $covered += $take;
+                    }
+                }
 
                 return (object) [
-                    'product' => $lines->first()->product,
-                    'variant' => $lines->first()->productVariant,
+                    'product' => $first->product,
+                    'variant' => $first->productVariant,
+                    'style' => $first->style,
+                    'color' => $first->color,
                     'needed' => $needed,
-                    'ordered' => $covered,
+                    'ordered' => round($covered, 4),
                     'to_buy' => max(round($needed - $covered, 4), 0),
                 ];
             });
+    }
+
+    /**
+     * Matches order lines to PO lines: product, variant, and — unless
+     * $withDetails is false — style and color (case and spacing ignored).
+     */
+    public static function purchaseKey(SalesOrderItem|PurchaseItem $line, bool $withDetails = true): string
+    {
+        $norm = fn ($value) => $withDetails ? mb_strtolower(trim((string) $value)) : '';
+
+        return $line->product_id.':'.($line->product_variant_id ?? '').':'.$norm($line->style).':'.$norm($line->color);
     }
 
     /**

@@ -3,7 +3,12 @@
     $editing = isset($purchase);
     $cartItems = collect(old('items', []))
         ->map(fn ($row) => ($opt = $itemOptions->firstWhere('id', $row['item'] ?? null))
-            ? array_merge($opt, ['quantity' => $row['quantity'] ?? '', 'unit_cost' => $row['unit_cost'] ?? ''])
+            ? array_merge($opt, [
+                'style' => $row['style'] ?? '',
+                'color' => $row['color'] ?? '',
+                'quantity' => $row['quantity'] ?? '',
+                'unit_cost' => $row['unit_cost'] ?? '',
+            ])
             : null)
         ->filter()->values();
     if ($cartItems->isEmpty()) {
@@ -106,10 +111,12 @@
 
         <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden mb-4">
             <div class="overflow-x-auto">
-            <table class="w-full min-w-[760px] text-sm">
+            <table class="w-full min-w-[980px] text-sm">
                 <thead>
                     <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                         <th class="px-5 py-3 font-semibold">{{ __('Item') }}</th>
+                        <th class="px-3 py-3 font-semibold w-36">{{ __('Style') }}</th>
+                        <th class="px-3 py-3 font-semibold w-36">{{ __('Color') }}</th>
                         <th class="px-5 py-3 font-semibold w-36">{{ __('Quantity') }}</th>
                         <th class="px-5 py-3 font-semibold w-36">{{ __('Unit Cost') }}</th>
                         <th class="px-5 py-3 font-semibold w-36 text-right">{{ __('Subtotal') }}</th>
@@ -117,12 +124,20 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    <template x-for="(item, i) in items" :key="item.id">
+                    <template x-for="(item, i) in items" :key="item.uid">
                         <tr class="hover:bg-slate-50">
                             <td class="px-5 py-3">
                                 <input type="hidden" :name="'items[' + i + '][item]'" :value="item.id">
                                 <span class="font-semibold text-slate-800" x-text="item.name"></span>
                                 <span class="block text-xs text-slate-400" x-text="item.unit || ''"></span>
+                            </td>
+                            <td class="px-3 py-3">
+                                <input type="text" maxlength="100" :name="'items[' + i + '][style]'" x-model="item.style" placeholder="—"
+                                       class="w-32 rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500">
+                            </td>
+                            <td class="px-3 py-3">
+                                <input type="text" maxlength="100" :name="'items[' + i + '][color]'" x-model="item.color" placeholder="—"
+                                       class="w-32 rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500">
                             </td>
                             <td class="px-5 py-3">
                                 <input type="number" step="0.0001" min="0.0001" :name="'items[' + i + '][quantity]'" x-model="item.quantity"
@@ -135,7 +150,7 @@
                             <td class="px-5 py-3 text-right font-semibold text-slate-800"
                                 x-text="((Number(item.quantity) || 0) * (Number(item.unit_cost) || 0)).toFixed(2)"></td>
                             <td class="px-5 py-3 text-right">
-                                <button type="button" @click="removeItem(item.id)" class="text-slate-400 hover:text-rose-600" title="{{ __('Remove') }}">
+                                <button type="button" @click="removeItem(item.uid)" class="text-slate-400 hover:text-rose-600" title="{{ __('Remove') }}">
                                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
                                 </button>
                             </td>
@@ -144,7 +159,7 @@
                 </tbody>
                 <tfoot class="border-t border-slate-200 bg-slate-50">
                     <tr>
-                        <td colspan="3" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Order Total') }}</td>
+                        <td colspan="5" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Order Total') }}</td>
                         <td class="px-5 py-2 text-right text-base font-bold text-brand-900" x-text="subtotal.toFixed(2)"></td>
                         <td></td>
                     </tr>

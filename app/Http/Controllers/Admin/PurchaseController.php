@@ -83,6 +83,8 @@ class PurchaseController extends Controller implements HasMiddleware
                         ? "{$need->product->name} — {$need->variant->label} ({$need->variant->sku})"
                         : "{$need->product->name} ({$need->product->sku})",
                     'unit' => $need->product->stockUnit?->short_name,
+                    'style' => $need->style,
+                    'color' => $need->color,
                     'quantity' => $need->to_buy,
                     'unit_cost' => round((float) ($need->variant?->estimated_cost ?? $need->product->estimated_cost), 4),
                 ])->values();
@@ -192,6 +194,8 @@ class PurchaseController extends Controller implements HasMiddleware
         $purchase->load(['requisition.proformaInvoice.party', 'salesOrder.party', 'items.product.stockUnit', 'items.productVariant.attributeValues']);
 
         $items = $purchase->items->map(fn ($item) => $this->itemRow($item, [
+            'style' => $item->style,
+            'color' => $item->color,
             'quantity' => (float) $item->quantity,
             'unit_cost' => (float) $item->unit_cost,
         ]))->values();
@@ -436,7 +440,9 @@ class PurchaseController extends Controller implements HasMiddleware
             'expected_date' => ['nullable', 'date', 'after_or_equal:order_date'],
             'note' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.item' => ['required', 'string', 'distinct'],
+            'items.*.item' => ['required', 'string'],
+            'items.*.style' => ['nullable', 'string', 'max:100'],
+            'items.*.color' => ['nullable', 'string', 'max:100'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.0001'],
             'items.*.unit_cost' => ['required', 'numeric', 'min:0'],
         ]);
@@ -448,6 +454,7 @@ class PurchaseController extends Controller implements HasMiddleware
         }
 
         $rows = [];
+        $seen = [];
         foreach ($validated['items'] as $i => $row) {
             [$product, $variant] = $this->resolveItem($row['item']);
 
@@ -455,9 +462,20 @@ class PurchaseController extends Controller implements HasMiddleware
                 throw ValidationException::withMessages(["items.{$i}.item" => 'Pick a valid product or variant.']);
             }
 
+            // The same product may repeat only with a different style / color.
+            $style = trim((string) ($row['style'] ?? '')) ?: null;
+            $color = trim((string) ($row['color'] ?? '')) ?: null;
+            $key = $row['item'].'|'.mb_strtolower((string) $style).'|'.mb_strtolower((string) $color);
+            if (isset($seen[$key])) {
+                throw ValidationException::withMessages(["items.{$i}.item" => "{$product->name} is listed twice with the same style and color — merge the lines."]);
+            }
+            $seen[$key] = true;
+
             $rows[] = [
                 'product' => $product,
                 'variant' => $variant,
+                'style' => $style,
+                'color' => $color,
                 'quantity' => (float) $row['quantity'],
                 'unit_cost' => (float) $row['unit_cost'],
                 'subtotal' => round((float) $row['quantity'] * (float) $row['unit_cost'], 2),
@@ -473,6 +491,8 @@ class PurchaseController extends Controller implements HasMiddleware
             $purchase->items()->create([
                 'product_id' => $row['product']->id,
                 'product_variant_id' => $row['variant']?->id,
+                'style' => $row['style'],
+                'color' => $row['color'],
                 'quantity' => $row['quantity'],
                 'unit_cost' => $row['unit_cost'],
                 'subtotal' => $row['subtotal'],

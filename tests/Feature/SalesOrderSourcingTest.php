@@ -142,7 +142,14 @@ class SalesOrderSourcingTest extends TestCase
         $this->actingAs($this->admin)->get(route('production-orders.create', ['source' => "so-{$order->id}"]))
             ->assertOk()->assertSee($production->production_no);
 
-        $this->actingAs($this->admin)->get(route('production-orders.show', $production))->assertOk()->assertSee($order->order_no);
+        $this->actingAs($this->admin)->get(route('production-orders.show', $production))->assertOk()->assertSee($order->order_no)
+            ->assertSee(route('production-orders.print', $production), false);
+        $this->actingAs($this->admin)->get(route('production-orders.print', $production))->assertOk()
+            ->assertSee($production->production_no)->assertSee($this->tape->name)->assertSee($order->party->name);
+        // The order links to its Production Order and its print.
+        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()
+            ->assertSee(route('production-orders.show', $production), false)
+            ->assertSee(route('production-orders.print', $production), false);
         $this->actingAs($this->admin)->get(route('production-orders.index'))->assertOk()->assertSee($order->order_no);
     }
 
@@ -212,9 +219,11 @@ class SalesOrderSourcingTest extends TestCase
     {
         $order = $this->confirmedOrder();
 
-        // Both label lines are bought together: 300 + 200.
+        // Each color of the label is its own PO line: Red 300, Blue 200.
         $this->actingAs($this->admin)->get(route('purchases.create', ['from_sales_order' => $order->id]))
-            ->assertOk()->assertSee($this->label->name)->assertSee('500');
+            ->assertOk()->assertSee($this->label->name)->assertSee('Red')->assertSee('Blue');
+
+        // An older-style PO line with no color still covers both.
 
         $this->buy($order, 500)->assertSessionHasNoErrors();
 
@@ -228,7 +237,8 @@ class SalesOrderSourcingTest extends TestCase
         $this->actingAs($this->admin)->get(route('purchases.index'))->assertOk()->assertSee($order->order_no);
         $this->actingAs($this->admin)->get(route('purchases.print', $purchase))->assertOk();
         $this->actingAs($this->admin)->get(route('purchases.edit', $purchase))->assertOk();
-        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()->assertSee($purchase->purchase_no);
+        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()->assertSee($purchase->purchase_no)
+            ->assertSee(route('purchases.print', $purchase), false);
 
         // Goods receipt works as for any PO.
         $line = $purchase->items()->first();
@@ -238,6 +248,48 @@ class SalesOrderSourcingTest extends TestCase
             'items' => [$line->id => ['quantity' => 500]],
         ])->assertSessionHasNoErrors();
         $this->assertEquals(500, $this->balance($this->label, $this->factory));
+    }
+
+    public function test_po_lines_keep_the_order_lines_style_and_color(): void
+    {
+        $order = $this->confirmedOrder();
+
+        $this->actingAs($this->admin)->post(route('purchases.store'), [
+            'sales_order_id' => $order->id,
+            'vendor_type' => 'supplier',
+            'party_id' => $this->supplier->id,
+            'site_id' => $this->factory->id,
+            'order_date' => '2026-11-02',
+            'items' => [
+                ['item' => "product-{$this->label->id}", 'color' => 'Red', 'quantity' => 300, 'unit_cost' => 0.05],
+                ['item' => "product-{$this->label->id}", 'color' => 'Blue', 'quantity' => 150, 'unit_cost' => 0.05],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $purchase = Purchase::with('items')->sole();
+        $this->assertSame(['Red', 'Blue'], $purchase->items->sortBy('id')->pluck('color')->values()->all());
+
+        // Red is covered; 50 Blue still to buy.
+        $needs = $order->refresh()->purchaseNeeds()->keyBy('color');
+        $this->assertEquals(0, $needs['Red']->to_buy);
+        $this->assertEquals(50, $needs['Blue']->to_buy);
+
+        // The same product and color twice on one PO is refused.
+        $this->actingAs($this->admin)->post(route('purchases.store'), [
+            'sales_order_id' => $order->id,
+            'vendor_type' => 'supplier',
+            'party_id' => $this->supplier->id,
+            'site_id' => $this->factory->id,
+            'order_date' => '2026-11-02',
+            'items' => [
+                ['item' => "product-{$this->label->id}", 'color' => 'Blue', 'quantity' => 25, 'unit_cost' => 0.05],
+                ['item' => "product-{$this->label->id}", 'color' => 'blue ', 'quantity' => 25, 'unit_cost' => 0.05],
+            ],
+        ])->assertSessionHasErrors('items.1.item');
+
+        $this->actingAs($this->admin)->get(route('purchases.show', $purchase))->assertOk()->assertSee('Red')->assertSee('Blue');
+        $this->actingAs($this->admin)->get(route('purchases.print', $purchase))->assertOk()->assertSee('Blue');
+        $this->actingAs($this->admin)->get(route('purchases.edit', $purchase))->assertOk()->assertSee('Red');
     }
 
     public function test_a_pi_issued_later_takes_over_the_plan_production_and_purchases(): void

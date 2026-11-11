@@ -150,6 +150,7 @@ Route::prefix('admin')->group(function () {
         Route::put('/production/bom/{product}', [BomController::class, 'update'])->name('bom.update');
         Route::resource('production-orders', ProductionOrderController::class)->only(['index', 'create', 'store', 'show'])
             ->parameters(['production-orders' => 'productionOrder']);
+        Route::get('/production-orders/{productionOrder}/print', [ProductionOrderController::class, 'print'])->name('production-orders.print');
         Route::post('/production-orders/{productionOrder}/start', [ProductionOrderController::class, 'start'])->name('production-orders.start');
         Route::post('/production-orders/{productionOrder}/complete', [ProductionOrderController::class, 'complete'])->name('production-orders.complete');
         Route::post('/production-orders/{productionOrder}/cancel', [ProductionOrderController::class, 'cancel'])->name('production-orders.cancel');

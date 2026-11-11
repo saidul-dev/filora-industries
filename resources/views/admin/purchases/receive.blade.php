@@ -69,7 +69,7 @@
                     <tr class="hover:bg-slate-50">
                         <td class="px-5 py-3">
                             <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
-                            <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
+                            <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}{{ $item->lineDetails() ? ' · '.$item->lineDetails() : '' }}</span>
                         </td>
                         <td class="px-5 py-3 text-right text-slate-700">{{ $qty($item->quantity) }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
                         <td class="px-5 py-3 text-right text-slate-600">{{ $qty($item->received_quantity) }}</td>

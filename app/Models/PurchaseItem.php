@@ -11,6 +11,8 @@ class PurchaseItem extends Model
         'purchase_id',
         'product_id',
         'product_variant_id',
+        'style',
+        'color',
         'quantity',
         'unit_cost',
         'subtotal',
@@ -47,5 +49,16 @@ class PurchaseItem extends Model
     public function label(): string
     {
         return $this->product->name.($this->productVariant ? ' — '.$this->productVariant->label : '');
+    }
+
+    /**
+     * "Style TS472302 · Color 0160" — empty when neither is set.
+     */
+    public function lineDetails(): string
+    {
+        return collect([
+            $this->style ? "Style {$this->style}" : null,
+            $this->color ? "Color {$this->color}" : null,
+        ])->filter()->implode(' · ');
     }
 }

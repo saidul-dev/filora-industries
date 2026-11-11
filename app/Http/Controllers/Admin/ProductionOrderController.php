@@ -36,7 +36,7 @@ class ProductionOrderController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:production.view', only: ['index', 'show']),
+            new Middleware('permission:production.view', only: ['index', 'show', 'print']),
             new Middleware('permission:production.create', only: ['create', 'store']),
             new Middleware('permission:production.edit', only: ['start']),
             new Middleware('permission:production.approve', only: ['complete']),
@@ -406,6 +406,21 @@ class ProductionOrderController extends Controller implements HasMiddleware
         return view('admin.production-orders.show', [
             'order' => $productionOrder,
             'suppliers' => Party::where('is_supplier', true)->where('status', true)->orderBy('name')->get(['id', 'name']),
+        ]);
+    }
+
+    public function print(ProductionOrder $productionOrder)
+    {
+        $productionOrder->load([
+            'proformaInvoice.party', 'salesOrder.party', 'site', 'creator',
+            'items.product.stockUnit', 'items.productVariant.attributeValues', 'items.salesOrderItem', 'items.proformaInvoiceItem',
+            'materials.material.stockUnit', 'materials.item.product', 'materials.item.productVariant.attributeValues',
+            'services.party', 'services.item.product', 'services.item.productVariant.attributeValues',
+        ]);
+
+        return view('admin.production-orders.print', [
+            'order' => $productionOrder,
+            'company' => \App\Models\CompanySetting::current(),
         ]);
     }
 

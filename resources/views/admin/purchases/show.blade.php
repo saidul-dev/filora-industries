@@ -104,6 +104,8 @@
             <thead>
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-5 py-3 font-semibold">{{ __('Item') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Style') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Color') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Ordered') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Received') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Remaining') }}</th>
@@ -118,6 +120,8 @@
                         <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
                         <span class="block text-xs text-slate-400">{{ $item->productVariant->sku ?? $item->product->sku }}</span>
                     </td>
+                    <td class="px-5 py-3 text-slate-700">{{ $item->style ?: '—' }}</td>
+                    <td class="px-5 py-3 text-slate-700">{{ $item->color ?: '—' }}</td>
                     <td class="px-5 py-3 text-right text-slate-700">{{ $qty($item->quantity) }} {{ $item->product->stockUnit->short_name ?? '' }}</td>
                     <td class="px-5 py-3 text-right text-slate-600">{{ $qty($item->received_quantity) }}</td>
                     <td class="px-5 py-3 text-right font-semibold {{ $item->remaining() > 0 ? 'text-amber-600' : 'text-emerald-600' }}">{{ $qty($item->remaining()) }}</td>
@@ -128,7 +132,7 @@
             </tbody>
             <tfoot class="border-t border-slate-200 bg-slate-50">
                 <tr>
-                    <td colspan="5" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Order Total') }}</td>
+                    <td colspan="7" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Order Total') }}</td>
                     <td class="px-5 py-2 text-right text-base font-bold text-brand-900">{{ number_format($purchase->total_amount, 2) }}</td>
                 </tr>
             </tfoot>
