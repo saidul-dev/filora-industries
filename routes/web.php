@@ -29,6 +29,7 @@ use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\PayrollRunController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ProductionOrderController;
+use App\Http\Controllers\Admin\ProductionOrderServiceController;
 use App\Http\Controllers\Admin\ProfitLossController;
 use App\Http\Controllers\Admin\ProformaInvoiceController;
 use App\Http\Controllers\Admin\PurchaseController;
@@ -152,6 +153,8 @@ Route::prefix('admin')->group(function () {
         Route::post('/production-orders/{productionOrder}/start', [ProductionOrderController::class, 'start'])->name('production-orders.start');
         Route::post('/production-orders/{productionOrder}/complete', [ProductionOrderController::class, 'complete'])->name('production-orders.complete');
         Route::post('/production-orders/{productionOrder}/cancel', [ProductionOrderController::class, 'cancel'])->name('production-orders.cancel');
+        Route::post('/production-orders/{productionOrder}/services', [ProductionOrderServiceController::class, 'store'])->name('production-orders.services.store');
+        Route::delete('/production-orders/{productionOrder}/services/{service}', [ProductionOrderServiceController::class, 'destroy'])->name('production-orders.services.destroy');
 
         Route::get('/stock/initial-stock', [InitialStockController::class, 'index'])->name('stock.initial.index');
         Route::post('/stock/initial-stock', [InitialStockController::class, 'store'])->name('stock.initial.store');

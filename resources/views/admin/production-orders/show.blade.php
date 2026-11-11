@@ -67,10 +67,11 @@
                 @endif
             </div>
             <div>
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Material Cost') }}</span>
-                <span class="block font-semibold text-slate-800">{{ number_format($order->material_cost, 2) }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Production Cost') }}</span>
+                <span class="block font-semibold text-slate-800">{{ number_format($order->totalCost(), 2) }}</span>
+                <span class="block text-xs text-slate-500">{{ __('Materials') }} {{ number_format($order->material_cost, 2) }} · {{ __('Third-party') }} {{ number_format($order->service_cost, 2) }}</span>
                 @if ($single && $order->totalQuantity() > 0)
-                <span class="block text-xs text-slate-500">{{ __('per unit') }} {{ number_format((float) $order->material_cost / ($order->totalProduced() ?: $order->totalQuantity()), 2) }}</span>
+                <span class="block text-xs text-slate-500">{{ __('per unit') }} {{ number_format($order->totalCost() / ($order->totalProduced() ?: $order->totalQuantity()), 2) }}</span>
                 @endif
             </div>
             <div>
@@ -169,6 +170,7 @@
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Quantity') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Produced') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Material Cost') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Third-Party') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Cost / Unit') }}</th>
                 </tr>
             </thead>
@@ -186,10 +188,182 @@
                     <td class="px-5 py-3 text-right text-slate-700">{{ $qty($item->quantity) }} {{ $itemUnit }}</td>
                     <td class="px-5 py-3 text-right {{ $item->produced_quantity !== null ? 'font-semibold text-emerald-600' : 'text-slate-400' }}">{{ $item->produced_quantity !== null ? $qty($item->produced_quantity).' '.$itemUnit : '—' }}</td>
                     <td class="px-5 py-3 text-right text-slate-700">{{ number_format($item->material_cost, 2) }}</td>
-                    <td class="px-5 py-3 text-right text-slate-600">{{ $base > 0 ? number_format((float) $item->material_cost / $base, 2) : '—' }}</td>
+                    <td class="px-5 py-3 text-right {{ (float) $item->service_cost > 0 ? 'text-slate-700' : 'text-slate-400' }}">{{ number_format($item->service_cost, 2) }}</td>
+                    <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ $base > 0 ? number_format($item->totalCost() / $base, 2) : '—' }}</td>
                 </tr>
                 @endforeach
             </tbody>
+        </table>
+        </div>
+    </div>
+
+    @php
+        $canEditServices = $order->isOpen() && $user->can('production.edit');
+        $serviceErrors = $errors->getBag('service');
+    @endphp
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden mb-4"
+         x-data="{
+            adding: {{ $serviceErrors->any() ? 'true' : 'false' }},
+            quantity: @js(old('quantity')),
+            rate: @js(old('rate')),
+            amount: @js(old('amount')),
+            calc() { if (this.quantity && this.rate) this.amount = (Number(this.quantity) * Number(this.rate)).toFixed(2); },
+         }">
+        <div class="flex flex-wrap items-end justify-between gap-4 px-6 pt-5 pb-3">
+            <div>
+                <h3 class="font-bold text-brand-900">{{ __('Third-Party Work') }}</h3>
+                <p class="text-xs text-slate-400">{{ __('Dyeing, printing, embroidery and other work done outside. Each entry is posted to the supplier\'s account and added to the finished goods\' cost.') }}</p>
+            </div>
+            @if ($canEditServices)
+            <button type="button" @click="adding = ! adding"
+                    class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                {{ __('Add Third-Party Work') }}
+            </button>
+            @endif
+        </div>
+
+        @if ($canEditServices)
+        <form method="POST" action="{{ route('production-orders.services.store', $order) }}" x-show="adding" x-cloak
+              class="mx-6 mb-4 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            @csrf
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div>
+                    <div class="flex items-center justify-between gap-2">
+                        <x-input-label for="party_id" :value="__('Supplier / Vendor')" />
+                        <x-quick-add-party role="supplier" />
+                    </div>
+                    <div class="mt-1">
+                        <x-searchable-select name="party_id" :options="$suppliers" :selected="old('party_id')" placeholder="{{ __('Select a supplier…') }}" />
+                    </div>
+                    <x-input-error class="mt-1" :messages="$serviceErrors->get('party_id')" />
+                </div>
+                <div>
+                    <x-input-label for="service" :value="__('Work Done')" />
+                    <x-text-input id="service" name="service" list="service-suggestions" class="mt-1 block w-full" :value="old('service')" placeholder="{{ __('e.g. Dyeing') }}" required />
+                    <datalist id="service-suggestions">
+                        @foreach (\App\Models\ProductionOrderService::COMMON_SERVICES as $suggestion)
+                        <option value="{{ $suggestion }}">
+                        @endforeach
+                    </datalist>
+                    <x-input-error class="mt-1" :messages="$serviceErrors->get('service')" />
+                </div>
+                <div>
+                    <x-input-label for="production_order_item_id" :value="__('For')" />
+                    <select id="production_order_item_id" name="production_order_item_id"
+                            class="mt-1 block w-full rounded-lg border-slate-300 text-sm focus:border-accent-500 focus:ring-accent-500">
+                        <option value="">{{ $single ? $order->label() : __('Whole order (split by quantity)') }}</option>
+                        @unless ($single)
+                        @foreach ($order->items as $item)
+                        <option value="{{ $item->id }}" @selected((string) old('production_order_item_id') === (string) $item->id)>{{ $item->label() }}{{ $item->lineDetails() ? ' · '.$item->lineDetails() : '' }}</option>
+                        @endforeach
+                        @endunless
+                    </select>
+                    <x-input-error class="mt-1" :messages="$serviceErrors->get('production_order_item_id')" />
+                </div>
+                <div>
+                    <x-input-label for="service_date" :value="__('Date')" />
+                    <x-text-input id="service_date" name="service_date" type="date" class="mt-1 block w-full" :value="old('service_date', now()->toDateString())" required />
+                    <x-input-error class="mt-1" :messages="$serviceErrors->get('service_date')" />
+                </div>
+                <div>
+                    <x-input-label for="service_quantity" :value="__('Quantity (optional)')" />
+                    <input id="service_quantity" name="quantity" type="number" step="0.0001" min="0" x-model="quantity" @input="calc()"
+                           class="mt-1 block w-full rounded-lg border-slate-300 text-right text-sm focus:border-accent-500 focus:ring-accent-500">
+                    <x-input-error class="mt-1" :messages="$serviceErrors->get('quantity')" />
+                </div>
+                <div>
+                    <x-input-label for="service_rate" :value="__('Rate (optional)')" />
+                    <input id="service_rate" name="rate" type="number" step="0.0001" min="0" x-model="rate" @input="calc()"
+                           class="mt-1 block w-full rounded-lg border-slate-300 text-right text-sm focus:border-accent-500 focus:ring-accent-500">
+                    <x-input-error class="mt-1" :messages="$serviceErrors->get('rate')" />
+                </div>
+                <div>
+                    <x-input-label for="service_amount" :value="__('Amount')" />
+                    <input id="service_amount" name="amount" type="number" step="0.01" min="0.01" x-model="amount" required
+                           class="mt-1 block w-full rounded-lg border-slate-300 text-right text-sm font-semibold focus:border-accent-500 focus:ring-accent-500">
+                    <x-input-error class="mt-1" :messages="$serviceErrors->get('amount')" />
+                </div>
+                <div>
+                    <x-input-label for="reference_no" :value="__('Bill / Challan No. (optional)')" />
+                    <x-text-input id="reference_no" name="reference_no" class="mt-1 block w-full" :value="old('reference_no')" />
+                    <x-input-error class="mt-1" :messages="$serviceErrors->get('reference_no')" />
+                </div>
+                <div class="md:col-span-2 xl:col-span-4">
+                    <x-input-label for="service_note" :value="__('Note (optional)')" />
+                    <x-text-input id="service_note" name="note" class="mt-1 block w-full" :value="old('note')" />
+                </div>
+            </div>
+            <div class="mt-4 flex items-center gap-3">
+                <button type="submit" class="rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">{{ __('Save & Post to Supplier') }}</button>
+                <button type="button" @click="adding = false" class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">{{ __('Cancel') }}</button>
+            </div>
+        </form>
+        @endif
+
+        <div class="overflow-x-auto">
+        <table class="w-full min-w-[860px] text-sm">
+            <thead>
+                <tr class="whitespace-nowrap border-y border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th class="px-5 py-3 font-semibold">{{ __('Date') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Work Done') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Supplier') }}</th>
+                    @unless ($single)<th class="px-5 py-3 font-semibold">{{ __('For') }}</th>@endunless
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Qty × Rate') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Amount') }}</th>
+                    <th class="px-5 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                @forelse ($order->services->sortBy('service_date') as $service)
+                <tr class="hover:bg-slate-50">
+                    <td class="whitespace-nowrap px-5 py-3 text-slate-600">{{ $service->service_date->format('d M, Y') }}</td>
+                    <td class="px-5 py-3">
+                        <span class="block font-semibold text-slate-800">{{ $service->service }}</span>
+                        @if ($service->reference_no || $service->note)
+                        <span class="block text-xs text-slate-500">{{ collect([$service->reference_no ? __('Bill').' '.$service->reference_no : null, $service->note])->filter()->implode(' · ') }}</span>
+                        @endif
+                    </td>
+                    <td class="px-5 py-3 text-slate-700">
+                        @can('parties.view')
+                        <a href="{{ route('parties.ledger', $service->party) }}" class="hover:text-accent-700">{{ $service->party->name }}</a>
+                        @else
+                        {{ $service->party->name }}
+                        @endcan
+                    </td>
+                    @unless ($single)
+                    <td class="px-5 py-3 text-slate-600">{{ $service->item ? $service->item->label() : __('Whole order') }}</td>
+                    @endunless
+                    <td class="whitespace-nowrap px-5 py-3 text-right text-slate-600">
+                        {{ $service->quantity !== null && $service->rate !== null ? $qty($service->quantity).' × '.number_format($service->rate, 2) : '—' }}
+                    </td>
+                    <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ number_format($service->amount, 2) }}</td>
+                    <td class="px-5 py-3 text-right">
+                        @if ($canEditServices)
+                        <form method="POST" action="{{ route('production-orders.services.destroy', [$order, $service]) }}"
+                              onsubmit="return confirm('{{ __('Remove this entry? It will be reversed from the supplier\'s account.') }}');">
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="text-xs font-semibold text-rose-600 hover:text-rose-800">{{ __('Remove') }}</button>
+                        </form>
+                        @endif
+                    </td>
+                </tr>
+                @empty
+                <tr>
+                    <td colspan="{{ $single ? 6 : 7 }}" class="px-5 py-6 text-center text-sm text-slate-400">{{ __('No third-party work recorded.') }}</td>
+                </tr>
+                @endforelse
+            </tbody>
+            @if ($order->services->isNotEmpty())
+            <tfoot class="border-t border-slate-200 bg-slate-50">
+                <tr>
+                    <td colspan="{{ $single ? 4 : 5 }}" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total Third-Party Cost') }}</td>
+                    <td class="px-5 py-2 text-right text-base font-bold text-brand-900">{{ number_format($order->service_cost, 2) }}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+            @endif
         </table>
         </div>
     </div>

@@ -38,6 +38,7 @@ class ProductionOrder extends Model
         'sales_order_id',
         'site_id',
         'material_cost',
+        'service_cost',
         'status',
         'start_date',
         'due_date',
@@ -50,6 +51,7 @@ class ProductionOrder extends Model
 
     protected $casts = [
         'material_cost' => 'decimal:2',
+        'service_cost' => 'decimal:2',
         'start_date' => 'date',
         'due_date' => 'date',
         'started_at' => 'datetime',
@@ -68,6 +70,22 @@ class ProductionOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(ProductionOrderItem::class);
+    }
+
+    /**
+     * Third-party work (dyeing, printing…) billed against this order.
+     */
+    public function services(): HasMany
+    {
+        return $this->hasMany(ProductionOrderService::class);
+    }
+
+    /**
+     * Materials consumed plus third-party work — what the finished goods cost.
+     */
+    public function totalCost(): float
+    {
+        return round((float) $this->material_cost + (float) $this->service_cost, 2);
     }
 
     public function site(): BelongsTo

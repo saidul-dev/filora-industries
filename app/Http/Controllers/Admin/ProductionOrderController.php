@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\PicksProducts;
 use App\Http\Controllers\Controller;
+use App\Models\Party;
 use App\Models\ProductionOrder;
 use App\Models\ProductionOrderItem;
 use App\Models\ProformaInvoice;
@@ -399,9 +400,13 @@ class ProductionOrderController extends Controller implements HasMiddleware
             'proformaInvoice.party', 'salesOrder.party', 'site', 'creator', 'completedBy',
             'items.product.stockUnit', 'items.productVariant.attributeValues', 'items.salesOrderItem', 'items.proformaInvoiceItem',
             'materials.material.stockUnit', 'materials.item.product', 'materials.item.productVariant.attributeValues',
+            'services.party', 'services.item.product', 'services.item.productVariant.attributeValues', 'services.creator',
         ]);
 
-        return view('admin.production-orders.show', ['order' => $productionOrder]);
+        return view('admin.production-orders.show', [
+            'order' => $productionOrder,
+            'suppliers' => Party::where('is_supplier', true)->where('status', true)->orderBy('name')->get(['id', 'name']),
+        ]);
     }
 
     public function start(ProductionOrder $productionOrder)
@@ -459,7 +464,8 @@ class ProductionOrderController extends Controller implements HasMiddleware
                         'site_id' => $productionOrder->site_id,
                         'type' => 'production',
                         'quantity' => $quantity,
-                        'unit_cost' => round((float) $item->material_cost / $quantity, 4),
+                        // Materials plus third-party work (dyeing…) on this line.
+                        'unit_cost' => round($item->totalCost() / $quantity, 4),
                         'note' => "Output of {$productionOrder->production_no}",
                         'moved_at' => now()->toDateString(),
                         'created_by' => Auth::id(),
@@ -491,6 +497,10 @@ class ProductionOrderController extends Controller implements HasMiddleware
     {
         if (! $productionOrder->isOpen()) {
             return back()->with('error', 'Only an open production order can be cancelled.');
+        }
+
+        if ($productionOrder->services()->exists()) {
+            return back()->with('error', "{$productionOrder->production_no} has third-party work posted to suppliers — remove those entries first (record any amount still owed as an Expense).");
         }
 
         DB::transaction(function () use ($productionOrder) {

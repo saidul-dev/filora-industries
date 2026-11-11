@@ -21,12 +21,14 @@ class ProductionOrderItem extends Model
         'quantity',
         'produced_quantity',
         'material_cost',
+        'service_cost',
     ];
 
     protected $casts = [
         'quantity' => 'decimal:4',
         'produced_quantity' => 'decimal:4',
         'material_cost' => 'decimal:2',
+        'service_cost' => 'decimal:2',
     ];
 
     public function productionOrder(): BelongsTo
@@ -57,6 +59,11 @@ class ProductionOrderItem extends Model
     public function materials(): HasMany
     {
         return $this->hasMany(ProductionOrderMaterial::class);
+    }
+
+    public function totalCost(): float
+    {
+        return round((float) $this->material_cost + (float) $this->service_cost, 2);
     }
 
     public function isLive(): bool
