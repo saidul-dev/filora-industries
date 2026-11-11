@@ -510,8 +510,8 @@
         @if ($user->can('sales.edit'))
         {{-- Split a line: part of it goes another way (e.g. 300 produced, 200 bought). --}}
         <template x-if="split">
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" @keydown.escape.window="split = null">
-            <form method="POST" :action="split?.action" @click.outside="split = null"
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" @click.self="split = null" @keydown.escape.window="split = null">
+            <form method="POST" :action="split?.action"
                   class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200"
                   x-data="{ qty: @js(old('split_quantity')) }">
                 @csrf

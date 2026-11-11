@@ -92,6 +92,14 @@ class SalesOrderController extends Controller implements HasMiddleware
             'productionOrders' => fn ($q) => $q->with(['site', 'items.product.stockUnit', 'items.productVariant.attributeValues'])->latest('id'),
         ]);
 
+        // Keep the parts of a split line together: each line sits right
+        // after the first line of the same product / style / color / size.
+        $key = fn ($item) => implode('|', [$item->product_id, $item->product_variant_id, $item->style, $item->color, $item->length_per_unit]);
+        $firstId = $salesOrder->items->sortBy('id')->groupBy($key)->map(fn ($group) => $group->min('id'));
+        $salesOrder->setRelation('items', $salesOrder->items
+            ->sortBy([fn ($a, $b) => $firstId[$key($a)] <=> $firstId[$key($b)], fn ($a, $b) => $a->id <=> $b->id])
+            ->values());
+
         return view('admin.sales-orders.show', ['order' => $salesOrder]);
     }
 
