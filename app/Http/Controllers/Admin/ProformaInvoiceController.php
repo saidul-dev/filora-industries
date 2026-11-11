@@ -10,6 +10,7 @@ use App\Models\Delivery;
 use App\Models\DeliveryItem;
 use App\Models\Party;
 use App\Models\ProductionOrder;
+use App\Models\ProductionOrderItem;
 use App\Models\ProformaInvoice;
 use App\Models\ProformaInvoiceItem;
 use App\Models\Purchase;
@@ -248,8 +249,8 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
             'items.product.stockUnit', 'items.product.bomItems.material.stockUnit', 'items.productVariant.attributeValues',
             'requisitions' => fn ($q) => $q->with('site')->withCount('items')->latest('id'),
             'purchases' => fn ($q) => $q->with(['party', 'site'])->latest('id'),
-            'productionOrders' => fn ($q) => $q->with(['product.stockUnit', 'productVariant.attributeValues', 'site'])->latest('id'),
-            'items.productionOrders',
+            'productionOrders' => fn ($q) => $q->with(['items.product.stockUnit', 'items.productVariant.attributeValues', 'site'])->latest('id'),
+            'items.productionItems.productionOrder',
             'deliveries' => fn ($q) => $q->with('site')->withCount('items')->latest('id'),
             'collections' => fn ($q) => $q->with('account')->latest('collection_date'),
         ]);
@@ -442,11 +443,16 @@ class ProformaInvoiceController extends Controller implements HasMiddleware
             Delivery::whereIn('sales_order_id', $orderIds)->whereNull('proforma_invoice_id')
                 ->update(['proforma_invoice_id' => $proformaInvoice->id]);
 
-            $adoptedProduction = 0;
+            // Production raised from the orders' lines moves onto the PI lines.
+            $unadopted = fn ($q) => $q->whereNull('proforma_invoice_id');
             foreach ($piLines as $orderItemId => $line) {
-                $adoptedProduction += ProductionOrder::where('sales_order_item_id', $orderItemId)->whereNull('proforma_invoice_id')
-                    ->update(['proforma_invoice_id' => $proformaInvoice->id, 'proforma_invoice_item_id' => $line->id]);
+                ProductionOrderItem::where('sales_order_item_id', $orderItemId)->whereNull('proforma_invoice_item_id')
+                    ->whereHas('productionOrder', $unadopted)
+                    ->update(['proforma_invoice_item_id' => $line->id]);
             }
+            $adoptedProduction = ProductionOrder::whereNull('proforma_invoice_id')
+                ->whereHas('items', fn ($q) => $q->whereIn('sales_order_item_id', $piLines->keys()))
+                ->update(['proforma_invoice_id' => $proformaInvoice->id]);
 
             $adoptedPurchases = Purchase::whereIn('sales_order_id', $orderIds)->whereNull('proforma_invoice_id')
                 ->update(['proforma_invoice_id' => $proformaInvoice->id]);

@@ -112,12 +112,22 @@
             @endif
 
             @if ($order->canSourceDirectly())
-            @php $toBuyTop = auth()->user()->can('purchases.create') ? $order->purchaseNeeds()->sum('to_buy') : 0; @endphp
+            @php
+                $toBuyTop = auth()->user()->can('purchases.create') ? $order->purchaseNeeds()->sum('to_buy') : 0;
+                $toProduceTop = auth()->user()->can('production.create') ? $order->linesToProduce()->count() : 0;
+            @endphp
             <a href="#fulfillment-plan"
                class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z"/></svg>
                 {{ __('Production / Purchase Plan') }}
             </a>
+            @if ($toProduceTop > 0)
+            <a href="{{ route('production-orders.create', ['source' => 'so-'.$order->id]) }}"
+               class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
+                {{ __('Create Production Order') }}
+                @if ($toProduceTop > 1)<span class="rounded-full bg-brand-50 px-1.5 text-xs text-brand-700">{{ $toProduceTop }}</span>@endif
+            </a>
+            @endif
             @if ($toBuyTop > 0)
             <a href="{{ route('purchases.create', ['from_sales_order' => $order->id]) }}"
                class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
@@ -333,12 +343,20 @@
                     @endif
                 </p>
             </div>
-            @if ($canPlan && $toBuy > 0 && $user->can('purchases.create'))
-            <a href="{{ route('purchases.create', ['from_sales_order' => $order->id]) }}"
-               class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
-                {{ __('Create Purchase Order') }}
-            </a>
-            @endif
+            <div class="flex flex-wrap gap-2">
+                @if ($canPlan && $user->can('production.create') && ($linesToProduce = $order->linesToProduce()->count()) > 0)
+                <a href="{{ route('production-orders.create', ['source' => 'so-'.$order->id]) }}"
+                   class="inline-flex items-center gap-2 rounded-lg bg-brand-800 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                    {{ $linesToProduce > 1 ? __('Produce :count lines together', ['count' => $linesToProduce]) : __('Create Production Order') }}
+                </a>
+                @endif
+                @if ($canPlan && $toBuy > 0 && $user->can('purchases.create'))
+                <a href="{{ route('purchases.create', ['from_sales_order' => $order->id]) }}"
+                   class="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-50">
+                    {{ __('Create Purchase Order') }}
+                </a>
+                @endif
+            </div>
         </div>
 
         @if ($canPlan)
@@ -380,8 +398,10 @@
                             @if ($item->remaining() <= 0)
                                 <span class="text-teal-600">{{ __('Delivered') }}</span>
                             @elseif ($plan === 'production')
-                                @php $toProduce = $item->quantityToProduce(); @endphp
-                                @if ($toProduce > 0 && $user->can('production.create'))
+                                @php $toProduce = $item->quantityToProduce(); $liveProduction = $item->liveProductionOrder(); @endphp
+                                @if ($liveProduction)
+                                    <a href="{{ route('production-orders.show', $liveProduction) }}" class="font-semibold text-emerald-600 hover:underline">{{ __('In production — :no', ['no' => $liveProduction->production_no]) }}</a>
+                                @elseif ($toProduce > 0 && $user->can('production.create'))
                                     <a href="{{ route('production-orders.create', ['sales_order_item_id' => $item->id]) }}"
                                        class="inline-flex items-center rounded-md bg-brand-800 px-2.5 py-1 font-semibold text-white hover:bg-brand-700">{{ __('Produce :qty', ['qty' => $qty($toProduce)]) }}</a>
                                 @elseif ($toProduce > 0)
@@ -422,7 +442,7 @@
                     <li class="flex items-center justify-between gap-3 px-4 py-2.5">
                         <span>
                             <a href="{{ route('production-orders.show', $production) }}" class="font-semibold text-accent-600 hover:text-accent-800">{{ $production->production_no }}</a>
-                            <span class="block text-xs text-slate-400">{{ $production->label() }} · {{ $qty($production->quantity) }} · {{ $production->site->name }}</span>
+                            <span class="block text-xs text-slate-400">{{ $production->label() }} · {{ $qty($production->totalQuantity()) }} · {{ $production->site->name }}</span>
                         </span>
                         <x-status-badge :label="$production->status_label" :color="\App\Models\ProductionOrder::STATUS_COLORS[$production->status] ?? 'slate'" />
                     </li>

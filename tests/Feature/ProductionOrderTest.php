@@ -85,17 +85,19 @@ class ProductionOrderTest extends TestCase
         $this->assertSame('in_progress', $this->invoice->refresh()->status);
 
         // Only the 400 not yet covered can still be ordered or requisitioned.
-        $line = $this->invoice->items()->with('productionOrders')->first();
+        $line = $this->invoice->items()->with('productionItems.productionOrder')->first();
         $this->assertEquals(400, $line->quantityToProduce());
         $suggested = app(PiFulfillmentPlanner::class)->purchaseSuggestions($this->invoice->fresh())
             ->mapWithKeys(fn ($row) => [$row->product->id => $row->quantity]);
         $this->assertArrayNotHasKey($this->tape->id, $suggested->all()); // 200 needed, 700 on hand
 
+        // A line is produced under one Production Order only.
         $this->actingAs($this->factoryManager)->post(route('production-orders.store'), [
             'proforma_invoice_item_id' => $line->id,
             'site_id' => $this->factory->id,
-            'quantity' => 500,
-        ])->assertSessionHasErrors('quantity');
+            'quantity' => 400,
+        ])->assertSessionHasErrors('proforma_invoice_item_id');
+        $this->assertSame(1, ProductionOrder::count());
     }
 
     public function test_issue_is_blocked_when_raw_material_is_short_at_the_site(): void
@@ -127,7 +129,7 @@ class ProductionOrderTest extends TestCase
 
         $order->refresh();
         $this->assertSame('completed', $order->status);
-        $this->assertEquals(580, (float) $order->produced_quantity);
+        $this->assertEquals(580, (float) $order->items()->first()->produced_quantity);
         $this->assertEquals(580, $this->balance($this->zipper, $this->factory));
         $this->assertEqualsWithDelta(1200 / 580, (float) $this->zipper->refresh()->estimated_cost, 0.0001);
 
@@ -147,7 +149,7 @@ class ProductionOrderTest extends TestCase
         $this->assertEquals(1000, $this->balance($this->slider, $this->factory));
         $this->assertEquals(2, (float) $this->tape->refresh()->estimated_cost);
 
-        $line = $this->invoice->items()->with('productionOrders')->first();
+        $line = $this->invoice->items()->with('productionItems.productionOrder')->first();
         $this->assertEquals(1000, $line->quantityToProduce());
 
         $this->actingAs($this->factoryManager)->post(route('production-orders.complete', $order), ['produced_quantity' => 1])

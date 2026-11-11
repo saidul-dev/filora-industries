@@ -334,7 +334,7 @@
                         @if ($item->fulfillment === 'production' && $item->product->bomItems->isEmpty())
                             <span class="mt-1 block text-[11px] font-semibold text-rose-500">{{ __('No BOM defined') }}</span>
                         @endif
-                        @if ($item->product->isManufactured() && $invoice->isActive() && $item->quantityToProduce() > 0 && $user->can('production.create'))
+                        @if ($item->product->isManufactured() && $invoice->isActive() && $item->quantityToProduce() > 0 && ! $item->liveProductionOrder() && $user->can('production.create'))
                             <a href="{{ route('production-orders.create', ['proforma_invoice_item_id' => $item->id]) }}"
                                class="mt-1 block text-[11px] font-semibold text-indigo-600 hover:text-indigo-800">
                                 {{ __('Produce :qty →', ['qty' => $qty($item->quantityToProduce())]) }}
@@ -498,7 +498,7 @@
                     </td>
                     <td class="px-5 py-3 text-slate-700">{{ $production->label() }}</td>
                     <td class="px-5 py-3 text-slate-600">{{ $production->site->name }}</td>
-                    <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ $qty($production->status === 'completed' ? $production->produced_quantity : $production->quantity) }} {{ $production->product->stockUnit->short_name ?? '' }}</td>
+                    <td class="px-5 py-3 text-right font-semibold text-slate-800">{{ $qty($production->status === 'completed' ? $production->totalProduced() : $production->totalQuantity()) }} {{ $production->items->count() === 1 ? ($production->items->first()->product->stockUnit->short_name ?? '') : '' }}</td>
                     <td class="px-5 py-3 text-right">
                         <x-status-badge :label="$production->status_label" :color="\App\Models\ProductionOrder::STATUS_COLORS[$production->status] ?? 'slate'" />
                     </td>

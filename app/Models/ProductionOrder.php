@@ -35,14 +35,8 @@ class ProductionOrder extends Model
     protected $fillable = [
         'production_no',
         'proforma_invoice_id',
-        'proforma_invoice_item_id',
         'sales_order_id',
-        'sales_order_item_id',
-        'product_id',
-        'product_variant_id',
         'site_id',
-        'quantity',
-        'produced_quantity',
         'material_cost',
         'status',
         'start_date',
@@ -55,8 +49,6 @@ class ProductionOrder extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:4',
-        'produced_quantity' => 'decimal:4',
         'material_cost' => 'decimal:2',
         'start_date' => 'date',
         'due_date' => 'date',
@@ -69,24 +61,13 @@ class ProductionOrder extends Model
         return $this->belongsTo(ProformaInvoice::class);
     }
 
-    public function proformaInvoiceItem(): BelongsTo
+    /**
+     * The manufactured lines this order produces — one or several lines of
+     * the same Sales Order / PI.
+     */
+    public function items(): HasMany
     {
-        return $this->belongsTo(ProformaInvoiceItem::class);
-    }
-
-    public function salesOrderItem(): BelongsTo
-    {
-        return $this->belongsTo(SalesOrderItem::class);
-    }
-
-    public function product(): BelongsTo
-    {
-        return $this->belongsTo(Product::class);
-    }
-
-    public function productVariant(): BelongsTo
-    {
-        return $this->belongsTo(ProductVariant::class);
+        return $this->hasMany(ProductionOrderItem::class);
     }
 
     public function site(): BelongsTo
@@ -119,22 +100,28 @@ class ProductionOrder extends Model
         return in_array($this->status, ['not_started', 'in_progress'], true);
     }
 
-    /**
-     * Output quantity this order accounts for on its PI line — what it
-     * actually produced once completed, otherwise what it's planned to.
-     */
-    public function outputQuantity(): float
+    public function totalQuantity(): float
     {
-        return match ($this->status) {
-            'completed' => (float) $this->produced_quantity,
-            'cancelled' => 0.0,
-            default => (float) $this->quantity,
-        };
+        return (float) $this->items->sum('quantity');
     }
 
+    public function totalProduced(): float
+    {
+        return (float) $this->items->sum('produced_quantity');
+    }
+
+    /**
+     * "Metal Zipper 7\"" for one line, "Metal Zipper 7\" + 2 more" for several.
+     */
     public function label(): string
     {
-        return $this->product->name.($this->productVariant ? ' — '.$this->productVariant->label : '');
+        $first = $this->items->first();
+
+        if (! $first) {
+            return '—';
+        }
+
+        return $first->label().($this->items->count() > 1 ? ' + '.($this->items->count() - 1).' '.__('more') : '');
     }
 
     public function getStatusLabelAttribute(): string

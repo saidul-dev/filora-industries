@@ -87,8 +87,8 @@ class SalesOrderController extends Controller implements HasMiddleware
             'party', 'salesPerson', 'creator', 'confirmedBy', 'proformaInvoices',
             'items.product.stockUnit', 'items.productVariant.attributeValues',
             'deliveries' => fn ($q) => $q->with(['site', 'proformaInvoice'])->withCount('items')->latest('id'),
-            'items.productionOrders', 'purchases.items',
-            'productionOrders' => fn ($q) => $q->with(['site', 'product', 'productVariant.attributeValues'])->latest('id'),
+            'items.productionItems.productionOrder', 'purchases.items',
+            'productionOrders' => fn ($q) => $q->with(['site', 'items.product.stockUnit', 'items.productVariant.attributeValues'])->latest('id'),
         ]);
 
         return view('admin.sales-orders.show', ['order' => $salesOrder]);

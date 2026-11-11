@@ -3,13 +3,16 @@
 namespace App\Models;
 
 use App\Models\Concerns\DescribesOrderLine;
+use App\Models\Concerns\ProducedOnProductionOrders;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ProformaInvoiceItem extends Model
 {
     use DescribesOrderLine;
+    use ProducedOnProductionOrders {
+        liveProductionOrder as ownLiveProductionOrder;
+    }
 
     /**
      * Planned fulfillment path per PI line — a single PI can mix all three.
@@ -68,21 +71,19 @@ class ProformaInvoiceItem extends Model
         return $product->isManufactured() ? 'production' : 'purchase';
     }
 
-    public function productionOrders(): HasMany
-    {
-        return $this->hasMany(ProductionOrder::class);
-    }
-
     /**
-     * How much of this line still has to be put into production: the
-     * ordered quantity less what non-cancelled Production Orders already
-     * produced or plan to, capped at what is still undelivered.
+     * A line sits on one live Production Order at most — its own, or the
+     * one already raised from the Sales Order line it came from (adopted
+     * once the PI is issued).
      */
-    public function quantityToProduce(): float
+    public function liveProductionOrder(): ?ProductionOrder
     {
-        $covered = $this->productionOrders->sum(fn (ProductionOrder $order) => $order->outputQuantity());
-
-        return max(round(min($this->remaining(), (float) $this->quantity - $covered), 4), 0);
+        return $this->ownLiveProductionOrder()
+            ?? ($this->sales_order_item_id
+                ? ProductionOrderItem::with('productionOrder')->where('sales_order_item_id', $this->sales_order_item_id)
+                    ->whereHas('productionOrder', fn ($q) => $q->where('status', '!=', 'cancelled'))
+                    ->first()?->productionOrder
+                : null);
     }
 
     /**

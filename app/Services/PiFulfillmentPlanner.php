@@ -33,7 +33,7 @@ class PiFulfillmentPlanner
      */
     public function purchaseSuggestions(ProformaInvoice $invoice): Collection
     {
-        $invoice->loadMissing(['items.product.bomItems.material', 'items.productVariant.attributeValues', 'items.productionOrders']);
+        $invoice->loadMissing(['items.product.bomItems.material', 'items.productVariant.attributeValues', 'items.productionItems.productionOrder']);
 
         $demand = [];
 

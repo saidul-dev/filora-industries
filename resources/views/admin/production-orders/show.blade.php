@@ -16,16 +16,18 @@
     @php
         $user = auth()->user();
         $qty = fn ($value) => rtrim(rtrim(number_format((float) $value, 4), '0'), '.') ?: '0';
-        $unit = $order->product->stockUnit->short_name ?? '';
+        $single = $order->items->count() === 1;
+        $unit = $single ? ($order->items->first()->product->stockUnit->short_name ?? '') : '';
+        $completeErrors = collect($errors->keys())->contains(fn ($k) => str_starts_with($k, 'produced'));
         $steps = ['not_started', 'in_progress', 'completed'];
         $currentStep = array_search($order->status, $steps, true);
     @endphp
 
-    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6 mb-4" x-data="{ completing: {{ $errors->has('produced_quantity') ? 'true' : 'false' }} }">
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6 mb-4" x-data="{ completing: {{ $completeErrors ? 'true' : 'false' }} }">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div class="text-sm">
-                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Product') }}</span>
-                <span class="font-semibold text-slate-800">{{ $order->label() }}</span>
+                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ $single ? __('Product') : __('Products') }}</span>
+                <span class="font-semibold text-slate-800">{{ $single ? $order->label() : __(':count lines', ['count' => $order->items->count()]) }}</span>
             </div>
             <x-status-badge size="lg" :label="$order->status_label" :color="\App\Models\ProductionOrder::STATUS_COLORS[$order->status] ?? 'slate'" />
         </div>
@@ -59,16 +61,16 @@
             </div>
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Quantity') }}</span>
-                <span class="block font-semibold text-slate-800">{{ $qty($order->quantity) }} {{ $unit }}</span>
-                @if ($order->produced_quantity !== null)
-                <span class="block text-xs text-slate-500">{{ __('Produced') }}: {{ $qty($order->produced_quantity) }} {{ $unit }}</span>
+                <span class="block font-semibold text-slate-800">{{ $qty($order->totalQuantity()) }} {{ $unit }}</span>
+                @if ($order->status === 'completed')
+                <span class="block text-xs text-slate-500">{{ __('Produced') }}: {{ $qty($order->totalProduced()) }} {{ $unit }}</span>
                 @endif
             </div>
             <div>
                 <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ __('Material Cost') }}</span>
                 <span class="block font-semibold text-slate-800">{{ number_format($order->material_cost, 2) }}</span>
-                @if ((float) $order->quantity > 0)
-                <span class="block text-xs text-slate-500">{{ __('per unit') }} {{ number_format((float) $order->material_cost / (float) ($order->produced_quantity ?: $order->quantity), 2) }}</span>
+                @if ($single && $order->totalQuantity() > 0)
+                <span class="block text-xs text-slate-500">{{ __('per unit') }} {{ number_format((float) $order->material_cost / ($order->totalProduced() ?: $order->totalQuantity()), 2) }}</span>
                 @endif
             </div>
             <div>
@@ -130,20 +132,66 @@
         </div>
 
         @can('production.approve')
-        <form method="POST" action="{{ route('production-orders.complete', $order) }}" x-show="completing" x-cloak class="mt-4 flex max-w-xl flex-wrap items-end gap-3">
+        <form method="POST" action="{{ route('production-orders.complete', $order) }}" x-show="completing" x-cloak class="mt-4 max-w-3xl rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
             @csrf
-            <div>
-                <x-input-label for="produced_quantity" :value="__('Quantity Produced')" />
-                <x-text-input id="produced_quantity" name="produced_quantity" type="number" step="0.0001" min="0.0001" max="{{ (float) $order->quantity }}"
-                              class="mt-1 block w-44" :value="old('produced_quantity', (float) $order->quantity)" required />
-                <x-input-error class="mt-2" :messages="$errors->get('produced_quantity')" />
+            <p class="mb-3 text-xs font-semibold text-slate-500">{{ __('Quantity produced per line — received into :site stock.', ['site' => $order->site->name]) }}</p>
+            <div class="space-y-2">
+                @foreach ($order->items as $item)
+                <div class="flex flex-wrap items-center gap-3">
+                    <label for="produced_{{ $item->id }}" class="min-w-0 flex-1 text-sm">
+                        <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
+                        <span class="block text-xs text-slate-500">{{ __('Planned') }} {{ $qty($item->quantity) }} {{ $item->product->stockUnit->short_name ?? '' }}{{ $item->lineDetails() ? ' · '.$item->lineDetails() : '' }}</span>
+                    </label>
+                    <x-text-input id="produced_{{ $item->id }}" name="produced[{{ $item->id }}]" type="number" step="0.0001" min="0" max="{{ (float) $item->quantity }}"
+                                  class="block w-40 text-right" :value="old('produced.'.$item->id, (float) $item->quantity)" required />
+                </div>
+                <x-input-error :messages="$errors->get('produced.'.$item->id)" />
+                @endforeach
             </div>
-            <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-                {{ __('Receive :unit into :site', ['unit' => $unit ?: __('units'), 'site' => $order->site->name]) }}
+            <x-input-error class="mt-2" :messages="array_merge($errors->get('produced'), $errors->get('produced_quantity'))" />
+            <button type="submit" class="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                {{ __('Receive into :site', ['site' => $order->site->name]) }}
             </button>
         </form>
         @endcan
         @endif
+    </div>
+
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden mb-4">
+        <div class="px-6 pt-5 pb-3">
+            <h3 class="font-bold text-brand-900">{{ __('Products') }}</h3>
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full min-w-[720px] text-sm">
+            <thead>
+                <tr class="border-y border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th class="px-5 py-3 font-semibold">{{ __('Product') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Quantity') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Produced') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Material Cost') }}</th>
+                    <th class="px-5 py-3 font-semibold text-right">{{ __('Cost / Unit') }}</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                @foreach ($order->items as $item)
+                @php
+                    $itemUnit = $item->product->stockUnit->short_name ?? '';
+                    $base = (float) ($item->produced_quantity ?: $item->quantity);
+                @endphp
+                <tr class="hover:bg-slate-50">
+                    <td class="px-5 py-3">
+                        <span class="block font-semibold text-slate-800">{{ $item->label() }}</span>
+                        @if ($item->lineDetails())<span class="block text-xs text-slate-500">{{ $item->lineDetails() }}</span>@endif
+                    </td>
+                    <td class="px-5 py-3 text-right text-slate-700">{{ $qty($item->quantity) }} {{ $itemUnit }}</td>
+                    <td class="px-5 py-3 text-right {{ $item->produced_quantity !== null ? 'font-semibold text-emerald-600' : 'text-slate-400' }}">{{ $item->produced_quantity !== null ? $qty($item->produced_quantity).' '.$itemUnit : '—' }}</td>
+                    <td class="px-5 py-3 text-right text-slate-700">{{ number_format($item->material_cost, 2) }}</td>
+                    <td class="px-5 py-3 text-right text-slate-600">{{ $base > 0 ? number_format((float) $item->material_cost / $base, 2) : '—' }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+        </div>
     </div>
 
     <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
@@ -162,6 +210,7 @@
             <thead>
                 <tr class="border-y border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-5 py-3 font-semibold">{{ __('Material') }}</th>
+                    @unless ($single)<th class="px-5 py-3 font-semibold">{{ __('For') }}</th>@endunless
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Per Unit') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Consumed') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Unit Cost') }}</th>
@@ -175,6 +224,7 @@
                         <span class="block font-semibold text-slate-800">{{ $material->material->name }}</span>
                         <span class="block text-xs text-slate-400">{{ $material->material->sku }}</span>
                     </td>
+                    @unless ($single)<td class="px-5 py-3 text-slate-600">{{ $material->item?->label() ?? '—' }}</td>@endunless
                     <td class="px-5 py-3 text-right text-slate-600">{{ $qty($material->quantity_per_unit) }}</td>
                     <td class="px-5 py-3 text-right text-slate-700">{{ $qty($material->quantity) }} {{ $material->material->stockUnit->short_name ?? '' }}</td>
                     <td class="px-5 py-3 text-right text-slate-600">{{ number_format($material->unit_cost, 2) }}</td>
@@ -184,7 +234,7 @@
             </tbody>
             <tfoot class="border-t border-slate-200 bg-slate-50">
                 <tr>
-                    <td colspan="4" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total Material Cost') }}</td>
+                    <td colspan="{{ $single ? 4 : 5 }}" class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Total Material Cost') }}</td>
                     <td class="px-5 py-2 text-right text-base font-bold text-brand-900">{{ number_format($order->material_cost, 2) }}</td>
                 </tr>
             </tfoot>

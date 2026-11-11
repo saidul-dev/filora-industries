@@ -159,6 +159,21 @@ class SalesOrder extends Model
     }
 
     /**
+     * Manufactured lines planned for production that still need it and
+     * aren't on a live Production Order — what one new Production Order
+     * for this order would cover.
+     */
+    public function linesToProduce()
+    {
+        $this->loadMissing(['items.product', 'items.productionItems.productionOrder']);
+
+        return $this->items->filter(fn (SalesOrderItem $item) => $item->product->isManufactured()
+            && $item->plannedFulfillment() === 'production'
+            && $item->quantityToProduce() > 0
+            && ! $item->liveProductionOrder());
+    }
+
+    /**
      * What the order still has to buy as finished goods, per product: the
      * undelivered quantity of its "purchase" lines, less what Purchase
      * Orders raised from the order already cover (a cancelled PO only

@@ -9,6 +9,7 @@ class ProductionOrderMaterial extends Model
 {
     protected $fillable = [
         'production_order_id',
+        'production_order_item_id',
         'material_id',
         'quantity_per_unit',
         'quantity',
@@ -24,6 +25,11 @@ class ProductionOrderMaterial extends Model
     public function productionOrder(): BelongsTo
     {
         return $this->belongsTo(ProductionOrder::class);
+    }
+
+    public function item(): BelongsTo
+    {
+        return $this->belongsTo(ProductionOrderItem::class, 'production_order_item_id');
     }
 
     public function material(): BelongsTo

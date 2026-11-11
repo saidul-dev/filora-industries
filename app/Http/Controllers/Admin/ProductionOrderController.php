@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\PicksProducts;
 use App\Http\Controllers\Controller;
 use App\Models\ProductionOrder;
+use App\Models\ProductionOrderItem;
 use App\Models\ProformaInvoice;
 use App\Models\ProformaInvoiceItem;
+use App\Models\SalesOrder;
 use App\Models\SalesOrderItem;
 use App\Models\Site;
 use App\Models\StockMovement;
@@ -18,7 +20,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Production Orders under a Proforma Invoice line (docs/order-to-delivery.md):
+ * Production Orders for one or several manufactured lines of a Sales Order
+ * or Proforma Invoice (docs/order-to-delivery.md):
  * issuing one consumes the product's BOM raw materials from stock at the
  * production site; completing it receives the finished goods into stock
  * there, costed at exactly what was consumed. No ledger posting is needed
@@ -46,12 +49,12 @@ class ProductionOrderController extends Controller implements HasMiddleware
         $siteId = $request->filled('site_id') ? $request->integer('site_id') : null;
         $q = $request->get('q');
 
-        $orders = ProductionOrder::with(['proformaInvoice.party', 'salesOrder.party', 'product.stockUnit', 'productVariant.attributeValues', 'site'])
+        $orders = ProductionOrder::with(['proformaInvoice.party', 'salesOrder.party', 'items.product.stockUnit', 'items.productVariant.attributeValues', 'site'])
             ->when($status, fn ($query) => $query->where('status', $status))
             ->when($siteId, fn ($query) => $query->where('site_id', $siteId))
             ->when($q, fn ($query) => $query->where(fn ($query) => $query
                 ->where('production_no', 'like', "%{$q}%")
-                ->orWhereHas('product', fn ($p) => $p->where('name', 'like', "%{$q}%"))
+                ->orWhereHas('items.product', fn ($p) => $p->where('name', 'like', "%{$q}%"))
                 ->orWhereHas('proformaInvoice', fn ($p) => $p->where('pi_no', 'like', "%{$q}%"))
                 ->orWhereHas('salesOrder', fn ($s) => $s->where('order_no', 'like', "%{$q}%"))))
             ->orderByRaw("CASE status WHEN 'in_progress' THEN 0 WHEN 'not_started' THEN 1 ELSE 2 END")
@@ -66,137 +69,264 @@ class ProductionOrderController extends Controller implements HasMiddleware
     }
 
     /**
-     * Pick a PI line — or a line of a confirmed Sales Order with no PI yet
-     * — for a Manufactured product, and a production site; the quantity
-     * defaults to what the line still needs produced, and the BOM's
-     * material requirement is shown against stock at that site.
+     * Pick a confirmed Sales Order (not on a PI yet) or an active PI, then
+     * tick one or several of its manufactured lines — they go into a single
+     * Production Order. Lines already on a live Production Order are shown
+     * but can't be picked again. The BOM requirement of the ticked lines is
+     * totalled per material and checked against stock at the site.
      */
     public function create(Request $request)
     {
-        $relations = ['product.stockUnit', 'product.bomItems.material.stockUnit', 'productVariant.attributeValues', 'productionOrders'];
-
-        if ($request->filled('sales_order_item_id')) {
-            $line = SalesOrderItem::with(array_merge(['salesOrder.party'], $relations))->find($request->integer('sales_order_item_id'));
-
-            if ($line && (! $line->salesOrder->canSourceDirectly() || ! $line->product->isManufactured())) {
-                $line = null;
-            }
-        } else {
-            $line = $request->filled('proforma_invoice_item_id')
-                ? ProformaInvoiceItem::with(array_merge(['proformaInvoice.party'], $relations))->find($request->integer('proforma_invoice_item_id'))
-                : null;
-
-            if ($line && (! $line->proformaInvoice->isActive() || ! $line->product->isManufactured())) {
-                $line = null;
-            }
-        }
-
-        $source = $line ? $this->lineSource($line) : null;
+        [$document, $preselect] = $this->resolveDocument($request);
 
         $sites = Site::where('status', true)->orderBy('name')->get();
         $site = $request->filled('site_id')
             ? $sites->firstWhere('id', $request->integer('site_id'))
             : ($sites->firstWhere('type', 'Factory') ?? $sites->first());
 
-        $quantity = $line ? (float) ($request->input('quantity') ?: $line->quantityToProduce()) : 0;
+        $lines = $document ? $this->documentLines($document) : collect();
 
-        $materials = $line && $site
-            ? $line->product->bomItems->map(fn ($bom) => (object) [
-                'material' => $bom->material,
-                'per_unit' => (float) $bom->quantity,
-                'required' => round($quantity * (float) $bom->quantity, 4),
-                'available' => $this->stockBalance($bom->material_id, null, $site->id),
-            ])
-            : collect();
+        $rows = $lines->map(function ($line) use ($preselect) {
+            $live = $line->liveProductionOrder();
+            $toProduce = $line->quantityToProduce();
+            $available = ! $live && $toProduce > 0 && $line->product->bomItems->isNotEmpty();
 
-        $lineOptions = ProformaInvoiceItem::with(['proformaInvoice', 'product', 'productVariant.attributeValues'])
-            ->whereHas('proformaInvoice', fn ($q) => $q->whereIn('status', ProformaInvoice::ACTIVE_STATUSES))
-            ->whereHas('product', fn ($q) => $q->where('product_type', 'manufactured'))
-            ->orderByDesc('proforma_invoice_id')
-            ->get()
-            ->map(fn ($item) => (object) ['id' => $item->id, 'name' => "{$item->proformaInvoice->pi_no} — {$item->label()}"]);
+            return [
+                'id' => $line->id,
+                'label' => $line->label(),
+                'details' => $line->lineDetails(),
+                'unit' => $line->product->stockUnit->short_name ?? '',
+                'ordered' => (float) $line->quantity,
+                'to_produce' => $toProduce,
+                'available' => $available,
+                'checked' => $available && ($preselect === null || in_array($line->id, $preselect, true)),
+                'qty' => $toProduce,
+                'no_bom' => $line->product->bomItems->isEmpty(),
+                'bom_url' => route('bom.edit', $line->product),
+                'live_no' => $live?->production_no,
+                'live_url' => $live ? route('production-orders.show', $live) : null,
+                'bom' => $line->product->bomItems->map(fn ($bom) => ['material' => $bom->material_id, 'per_unit' => (float) $bom->quantity])->values(),
+            ];
+        })->values();
 
-        return view('admin.production-orders.create', compact('line', 'source', 'lineOptions', 'sites', 'site', 'quantity', 'materials'));
+        $materials = $lines->flatMap(fn ($line) => $line->product->bomItems)->unique('material_id')
+            ->mapWithKeys(fn ($bom) => [$bom->material_id => [
+                'name' => $bom->material->name,
+                'unit' => $bom->material->stockUnit->short_name ?? '',
+                'available' => $site ? $this->stockBalance($bom->material_id, null, $site->id) : 0,
+            ]]);
+
+        $sourceOptions = $this->sourceOptions();
+        $selectedSource = $document ? ($document instanceof SalesOrder ? 'so-' : 'pi-').$document->id : null;
+
+        return view('admin.production-orders.create', compact(
+            'document', 'rows', 'materials', 'sourceOptions', 'selectedSource', 'sites', 'site',
+        ));
     }
 
     /**
-     * Issue the order: snapshot the BOM, check every material is on hand at
-     * the production site, and post one production_consumption movement
-     * per material — all or nothing.
+     * The document picked on the form ("so-7" / "pi-3"), or the one a single
+     * line links to (the "Produce" links on orders and PIs) with that line
+     * preselected.
+     *
+     * @return array{0: SalesOrder|ProformaInvoice|null, 1: int[]|null}
+     */
+    protected function resolveDocument(Request $request): array
+    {
+        $document = null;
+        $preselect = null;
+
+        if (preg_match('/^(pi|so)-(\d+)$/', (string) $request->input('source'), $m)) {
+            $document = $m[1] === 'so' ? SalesOrder::find($m[2]) : ProformaInvoice::find($m[2]);
+        } elseif ($request->filled('sales_order_item_id')) {
+            $line = SalesOrderItem::find($request->integer('sales_order_item_id'));
+            [$document, $preselect] = [$line?->salesOrder, $line ? [$line->id] : null];
+        } elseif ($request->filled('proforma_invoice_item_id')) {
+            $line = ProformaInvoiceItem::find($request->integer('proforma_invoice_item_id'));
+            [$document, $preselect] = [$line?->proformaInvoice, $line ? [$line->id] : null];
+        }
+
+        if ($document instanceof SalesOrder && ! $document->canSourceDirectly()) {
+            $document = null;
+        }
+        if ($document instanceof ProformaInvoice && ! $document->isActive()) {
+            $document = null;
+        }
+
+        return [$document, $document ? $preselect : null];
+    }
+
+    /**
+     * Manufactured lines of the document planned for production — an
+     * order's plan, or the PI line's fulfillment.
+     */
+    protected function documentLines(SalesOrder|ProformaInvoice $document)
+    {
+        $document->load([
+            'items.product.stockUnit', 'items.product.bomItems.material.stockUnit',
+            'items.productVariant.attributeValues', 'items.productionItems.productionOrder',
+        ]);
+
+        return $document->items->sortBy('id')
+            ->filter(fn ($line) => $line->product->isManufactured())
+            ->filter(fn ($line) => $document instanceof SalesOrder
+                ? $line->plannedFulfillment() === 'production'
+                : $line->fulfillment === 'production')
+            ->filter(fn ($line) => $line->remaining() > 0 || $line->liveProductionOrder())
+            ->values();
+    }
+
+    /**
+     * Sales Orders and PIs that still have at least one manufactured line
+     * not on a live Production Order (a PI line also counts the one raised
+     * from its order line).
+     */
+    protected function sourceOptions()
+    {
+        $live = ProductionOrderItem::whereHas('productionOrder', fn ($q) => $q->where('status', '!=', 'cancelled'))
+            ->get(['proforma_invoice_item_id', 'sales_order_item_id']);
+        $takenPi = $live->pluck('proforma_invoice_item_id')->filter()->flip();
+        $takenSo = $live->pluck('sales_order_item_id')->filter()->flip();
+
+        $invoices = ProformaInvoice::with(['party', 'items' => fn ($q) => $q->where('fulfillment', 'production')->with('product')])
+            ->whereIn('status', ProformaInvoice::ACTIVE_STATUSES)
+            ->orderByDesc('id')->get()
+            ->filter(fn ($pi) => $pi->items->contains(fn ($item) => $item->product->isManufactured()
+                && $item->remaining() > 0
+                && ! $takenPi->has($item->id)
+                && ! ($item->sales_order_item_id && $takenSo->has($item->sales_order_item_id))))
+            ->map(fn ($pi) => (object) ['id' => "pi-{$pi->id}", 'name' => "{$pi->pi_no} · {$pi->party->name}"]);
+
+        $orders = SalesOrder::with(['party', 'items.product'])
+            ->whereIn('status', ['confirmed', 'partially_delivered'])
+            ->orderByDesc('id')->get()
+            ->filter(fn ($order) => $order->items->contains(fn ($item) => $item->product->isManufactured()
+                && $item->plannedFulfillment() === 'production'
+                && $item->remaining() > 0
+                && ! $takenSo->has($item->id)))
+            ->map(fn ($order) => (object) ['id' => "so-{$order->id}", 'name' => "{$order->order_no} · {$order->party->name}"]);
+
+        return $orders->concat($invoices)->values();
+    }
+
+    /**
+     * Issue the order for the ticked lines: snapshot each line's BOM, check
+     * the summed material need is on hand at the site, and post the
+     * production_consumption movements — all or nothing.
+     *
+     * A single line can still be sent the old way (sales_order_item_id or
+     * proforma_invoice_item_id + quantity).
      */
     public function store(Request $request)
     {
+        $legacyField = collect(['sales_order_item_id', 'proforma_invoice_item_id'])->first(fn ($f) => $request->filled($f));
+
+        if ($legacyField && ! $request->filled('source')) {
+            $line = $legacyField === 'sales_order_item_id'
+                ? SalesOrderItem::find($request->integer($legacyField))
+                : ProformaInvoiceItem::find($request->integer($legacyField));
+
+            if (! $line) {
+                throw ValidationException::withMessages([$legacyField => 'That line no longer exists.']);
+            }
+
+            $request->merge([
+                'source' => $line instanceof SalesOrderItem ? "so-{$line->sales_order_id}" : "pi-{$line->proforma_invoice_id}",
+                'items' => [$line->id => $request->input('quantity')],
+            ]);
+        } else {
+            $legacyField = null;
+        }
+
+        // Where errors land: per line on the form, the old field names otherwise.
+        $lineKey = fn ($id) => $legacyField ?: "items.{$id}";
+        $qtyKey = fn ($id) => $legacyField ? 'quantity' : "items.{$id}";
+        $totalKey = $legacyField ? 'quantity' : 'items';
+
         $validated = $request->validate([
-            'proforma_invoice_item_id' => ['required_without:sales_order_item_id', 'nullable', 'integer', 'exists:proforma_invoice_items,id'],
-            'sales_order_item_id' => ['required_without:proforma_invoice_item_id', 'nullable', 'integer', 'exists:sales_order_items,id'],
+            'source' => ['required', 'string', 'regex:/^(pi|so)-\d+$/'],
+            'items' => ['required', 'array'],
+            'items.*' => ['nullable', 'numeric', 'min:0'],
             'site_id' => ['required', 'integer', 'exists:sites,id'],
-            'quantity' => ['required', 'numeric', 'min:0.0001'],
             'start_date' => ['nullable', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'note' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'items.required' => 'Tick at least one line to produce.',
         ]);
 
-        $quantity = (float) $validated['quantity'];
+        [$kind, $documentId] = explode('-', $validated['source']);
+        $document = $kind === 'so' ? SalesOrder::findOrFail($documentId) : ProformaInvoice::findOrFail($documentId);
+        $invoice = $document instanceof ProformaInvoice ? $document : null;
+        $reference = $invoice ? $invoice->pi_no : $document->order_no;
 
-        if (! empty($validated['sales_order_item_id'])) {
-            $line = SalesOrderItem::with(['salesOrder', 'product.bomItems.material', 'productionOrders'])->findOrFail($validated['sales_order_item_id']);
-            $invoice = null;
-            $order = $line->salesOrder;
-            $field = 'sales_order_item_id';
-            $reference = $order->order_no;
+        if (! $invoice && ! $document->canSourceDirectly()) {
+            throw ValidationException::withMessages([$legacyField ?: 'source' => "{$document->order_no} can't be produced for directly (status: {$document->status_label})".($document->status === 'pi_generated' ? ' — raise production under its Proforma Invoice.' : '.')]);
+        }
+        if ($invoice && ! $invoice->isActive()) {
+            throw ValidationException::withMessages([$legacyField ?: 'source' => "{$invoice->pi_no} is not open for production (status: {$invoice->status_label})."]);
+        }
 
-            if (! $order->canSourceDirectly()) {
-                throw ValidationException::withMessages([$field => "{$order->order_no} can't be produced for directly (status: {$order->status_label})".($order->status === 'pi_generated' ? ' — raise production under its Proforma Invoice.' : '.')]);
+        $document->load(['items.product.bomItems.material', 'items.productionItems.productionOrder']);
+        $quantities = collect($validated['items'])->map(fn ($q) => (float) $q)->filter(fn ($q) => $q > 0);
+
+        if ($quantities->isEmpty()) {
+            throw ValidationException::withMessages([$totalKey => 'Enter a quantity for at least one line.']);
+        }
+
+        $lines = $quantities->map(function ($quantity, $lineId) use ($document, $reference, $lineKey, $qtyKey) {
+            $line = $document->items->firstWhere('id', (int) $lineId);
+
+            if (! $line) {
+                throw ValidationException::withMessages([$lineKey($lineId) => "That line is not on {$reference}."]);
             }
-        } else {
-            $line = ProformaInvoiceItem::with(['proformaInvoice', 'product.bomItems.material', 'productionOrders'])->findOrFail($validated['proforma_invoice_item_id']);
-            $invoice = $line->proformaInvoice;
-            $order = null;
-            $field = 'proforma_invoice_item_id';
-            $reference = $invoice->pi_no;
-
-            if (! $invoice->isActive()) {
-                throw ValidationException::withMessages([$field => "{$invoice->pi_no} is not open for production (status: {$invoice->status_label})."]);
+            if (! $line->product->isManufactured()) {
+                throw ValidationException::withMessages([$lineKey($lineId) => "{$line->product->name} is not a Manufactured product."]);
             }
-        }
+            if ($line->product->bomItems->isEmpty()) {
+                throw ValidationException::withMessages([$lineKey($lineId) => "{$line->product->name} has no BOM — define its raw materials first."]);
+            }
+            if ($existing = $line->liveProductionOrder()) {
+                throw ValidationException::withMessages([$lineKey($lineId) => "{$line->label()} on {$reference} already has Production Order {$existing->production_no} — cancel it first to raise a new one."]);
+            }
+            if ($quantity > $line->quantityToProduce() + 0.00001) {
+                throw ValidationException::withMessages([$qtyKey($lineId) => "Only {$line->quantityToProduce()} of {$line->label()} is still to be produced for {$reference}."]);
+            }
 
-        if (! $line->product->isManufactured()) {
-            throw ValidationException::withMessages([$field => "{$line->product->name} is not a Manufactured product."]);
-        }
+            return ['line' => $line, 'quantity' => $quantity];
+        })->values();
 
-        if ($line->product->bomItems->isEmpty()) {
-            throw ValidationException::withMessages([$field => "{$line->product->name} has no BOM — define its raw materials first."]);
-        }
-
-        if ($quantity > $line->quantityToProduce() + 0.00001) {
-            throw ValidationException::withMessages(['quantity' => "Only {$line->quantityToProduce()} of {$line->label()} is still to be produced for {$reference}."]);
-        }
-
-        $materials = $line->product->bomItems->map(function ($bom) use ($quantity, $validated) {
-            $required = round($quantity * (float) $bom->quantity, 4);
-            $available = $this->stockBalance($bom->material_id, null, (int) $validated['site_id']);
+        // The ticked lines' materials, summed, must be on hand at the site.
+        $siteId = (int) $validated['site_id'];
+        $lines->flatMap(fn ($row) => $row['line']->product->bomItems->map(fn ($bom) => [
+            'bom' => $bom,
+            'required' => round($row['quantity'] * (float) $bom->quantity, 4),
+        ]))->groupBy(fn ($need) => $need['bom']->material_id)->each(function ($needs, $materialId) use ($siteId, $totalKey) {
+            $required = round($needs->sum('required'), 4);
+            $available = $this->stockBalance((int) $materialId, null, $siteId);
 
             if ($required > $available + 0.00001) {
                 throw ValidationException::withMessages([
-                    'quantity' => "Not enough {$bom->material->name} at this site: {$required} needed, {$available} on hand.",
+                    $totalKey => "Not enough {$needs->first()['bom']->material->name} at this site: {$required} needed, {$available} on hand.",
                 ]);
             }
-
-            return ['bom' => $bom, 'required' => $required, 'unit_cost' => (float) $bom->material->estimated_cost];
         });
 
-        $production = DB::transaction(function () use ($validated, $line, $invoice, $order, $reference, $quantity, $materials) {
+        $production = DB::transaction(function () use ($validated, $lines, $document, $invoice, $reference, $siteId) {
+            // Under a PI the header keeps the Sales Order only when all the
+            // lines come from the same one.
+            if ($invoice) {
+                $orderIds = $lines->map(fn ($row) => $row['line']->salesOrderItem?->sales_order_id)->filter()->unique();
+                $salesOrderId = $orderIds->count() === 1 ? $orderIds->first() : null;
+            } else {
+                $salesOrderId = $document->id;
+            }
+
             $production = ProductionOrder::create([
                 'production_no' => 'PENDING',
                 'proforma_invoice_id' => $invoice?->id,
-                'proforma_invoice_item_id' => $invoice ? $line->id : null,
-                // A PI line made from an order line keeps the order line too.
-                'sales_order_id' => $order?->id ?? $line->salesOrderItem?->sales_order_id,
-                'sales_order_item_id' => $order ? $line->id : $line->sales_order_item_id,
-                'product_id' => $line->product_id,
-                'product_variant_id' => $line->product_variant_id,
-                'site_id' => $validated['site_id'],
-                'quantity' => $quantity,
+                'sales_order_id' => $salesOrderId,
+                'site_id' => $siteId,
                 'status' => 'not_started',
                 'start_date' => $validated['start_date'] ?? null,
                 'due_date' => $validated['due_date'] ?? null,
@@ -205,33 +335,54 @@ class ProductionOrderController extends Controller implements HasMiddleware
             ]);
             $production->update(['production_no' => 'PRD-'.str_pad($production->id, 6, '0', STR_PAD_LEFT)]);
 
-            $materialCost = 0.0;
+            $totalCost = 0.0;
 
-            foreach ($materials as $row) {
-                $production->materials()->create([
-                    'material_id' => $row['bom']->material_id,
-                    'quantity_per_unit' => $row['bom']->quantity,
-                    'quantity' => $row['required'],
-                    'unit_cost' => $row['unit_cost'],
+            foreach ($lines as $row) {
+                $line = $row['line'];
+                $item = $production->items()->create([
+                    'proforma_invoice_item_id' => $invoice ? $line->id : null,
+                    // A PI line made from an order line keeps the order line too.
+                    'sales_order_item_id' => $invoice ? $line->sales_order_item_id : $line->id,
+                    'product_id' => $line->product_id,
+                    'product_variant_id' => $line->product_variant_id,
+                    'quantity' => $row['quantity'],
                 ]);
 
-                StockMovement::create([
-                    'product_id' => $row['bom']->material_id,
-                    'site_id' => $validated['site_id'],
-                    'type' => 'production_consumption',
-                    'quantity' => $row['required'],
-                    'unit_cost' => $row['unit_cost'],
-                    'note' => "Consumed by {$production->production_no} for {$reference}",
-                    'moved_at' => now()->toDateString(),
-                    'created_by' => Auth::id(),
-                    'reference_type' => ProductionOrder::class,
-                    'reference_id' => $production->id,
-                ]);
+                $itemCost = 0.0;
 
-                $materialCost += $row['required'] * $row['unit_cost'];
+                foreach ($line->product->bomItems as $bom) {
+                    $required = round($row['quantity'] * (float) $bom->quantity, 4);
+                    $unitCost = (float) $bom->material->estimated_cost;
+
+                    $production->materials()->create([
+                        'production_order_item_id' => $item->id,
+                        'material_id' => $bom->material_id,
+                        'quantity_per_unit' => $bom->quantity,
+                        'quantity' => $required,
+                        'unit_cost' => $unitCost,
+                    ]);
+
+                    StockMovement::create([
+                        'product_id' => $bom->material_id,
+                        'site_id' => $siteId,
+                        'type' => 'production_consumption',
+                        'quantity' => $required,
+                        'unit_cost' => $unitCost,
+                        'note' => "Consumed by {$production->production_no} for {$reference}",
+                        'moved_at' => now()->toDateString(),
+                        'created_by' => Auth::id(),
+                        'reference_type' => ProductionOrder::class,
+                        'reference_id' => $production->id,
+                    ]);
+
+                    $itemCost += $required * $unitCost;
+                }
+
+                $item->update(['material_cost' => round($itemCost, 2)]);
+                $totalCost += $itemCost;
             }
 
-            $production->update(['material_cost' => round($materialCost, 2)]);
+            $production->update(['material_cost' => round($totalCost, 2)]);
 
             $invoice?->markInProgress();
 
@@ -245,8 +396,9 @@ class ProductionOrderController extends Controller implements HasMiddleware
     public function show(ProductionOrder $productionOrder)
     {
         $productionOrder->load([
-            'proformaInvoice.party', 'salesOrder.party', 'product.stockUnit', 'productVariant.attributeValues', 'site',
-            'materials.material.stockUnit', 'creator', 'completedBy',
+            'proformaInvoice.party', 'salesOrder.party', 'site', 'creator', 'completedBy',
+            'items.product.stockUnit', 'items.productVariant.attributeValues', 'items.salesOrderItem', 'items.proformaInvoiceItem',
+            'materials.material.stockUnit', 'materials.item.product', 'materials.item.productVariant.attributeValues',
         ]);
 
         return view('admin.production-orders.show', ['order' => $productionOrder]);
@@ -264,9 +416,9 @@ class ProductionOrderController extends Controller implements HasMiddleware
     }
 
     /**
-     * Receive the output into finished goods stock at the production site.
-     * Its unit cost is the materials consumed ÷ units actually produced, so
-     * a short run carries its full material cost.
+     * Receive the output of every line into finished goods stock at the
+     * production site. A line's unit cost is its consumed materials ÷ the
+     * units it actually produced, so a short run carries its full cost.
      */
     public function complete(Request $request, ProductionOrder $productionOrder)
     {
@@ -274,31 +426,53 @@ class ProductionOrderController extends Controller implements HasMiddleware
             return back()->with('error', 'This production order is already closed.');
         }
 
-        $validated = $request->validate([
-            'produced_quantity' => ['required', 'numeric', 'min:0.0001', 'max:'.(float) $productionOrder->quantity],
-        ]);
+        $productionOrder->load('items.product');
 
-        $produced = (float) $validated['produced_quantity'];
-        $unitCost = round((float) $productionOrder->material_cost / $produced, 4);
-
-        DB::transaction(function () use ($productionOrder, $produced, $unitCost) {
-            StockMovement::create([
-                'product_id' => $productionOrder->product_id,
-                'product_variant_id' => $productionOrder->product_variant_id,
-                'site_id' => $productionOrder->site_id,
-                'type' => 'production',
-                'quantity' => $produced,
-                'unit_cost' => $unitCost,
-                'note' => "Output of {$productionOrder->production_no}",
-                'moved_at' => now()->toDateString(),
-                'created_by' => Auth::id(),
-                'reference_type' => ProductionOrder::class,
-                'reference_id' => $productionOrder->id,
+        // A single-line order can still be completed with one produced_quantity.
+        if ($request->has('produced_quantity') && $productionOrder->items->count() === 1) {
+            $request->validate([
+                'produced_quantity' => ['required', 'numeric', 'min:0.0001', 'max:'.(float) $productionOrder->items->first()->quantity],
             ]);
+            $request->merge(['produced' => [$productionOrder->items->first()->id => $request->input('produced_quantity')]]);
+        }
+
+        $rules = ['produced' => ['required', 'array']];
+        foreach ($productionOrder->items as $item) {
+            $rules["produced.{$item->id}"] = ['required', 'numeric', 'min:0', 'max:'.(float) $item->quantity];
+        }
+        $validated = $request->validate($rules);
+
+        $produced = $productionOrder->items->mapWithKeys(fn ($item) => [$item->id => (float) $validated['produced'][$item->id]]);
+
+        if ($produced->sum() <= 0) {
+            throw ValidationException::withMessages(['produced' => 'Enter what was produced for at least one line.']);
+        }
+
+        DB::transaction(function () use ($productionOrder, $produced) {
+            foreach ($productionOrder->items as $item) {
+                $quantity = $produced[$item->id];
+
+                if ($quantity > 0) {
+                    StockMovement::create([
+                        'product_id' => $item->product_id,
+                        'product_variant_id' => $item->product_variant_id,
+                        'site_id' => $productionOrder->site_id,
+                        'type' => 'production',
+                        'quantity' => $quantity,
+                        'unit_cost' => round((float) $item->material_cost / $quantity, 4),
+                        'note' => "Output of {$productionOrder->production_no}",
+                        'moved_at' => now()->toDateString(),
+                        'created_by' => Auth::id(),
+                        'reference_type' => ProductionOrder::class,
+                        'reference_id' => $productionOrder->id,
+                    ]);
+                }
+
+                $item->update(['produced_quantity' => $quantity]);
+            }
 
             $productionOrder->update([
                 'status' => 'completed',
-                'produced_quantity' => $produced,
                 'started_at' => $productionOrder->started_at ?? now(),
                 'completed_at' => now(),
                 'completed_by' => Auth::id(),
@@ -338,23 +512,5 @@ class ProductionOrderController extends Controller implements HasMiddleware
         });
 
         return back()->with('success', "{$productionOrder->production_no} cancelled — raw materials returned to stock.");
-    }
-
-    /**
-     * What the create form shows about the document the line belongs to.
-     *
-     * @param  ProformaInvoiceItem|SalesOrderItem  $line
-     */
-    protected function lineSource($line): object
-    {
-        $document = $line instanceof SalesOrderItem ? $line->salesOrder : $line->proformaInvoice;
-
-        return (object) [
-            'field' => $line instanceof SalesOrderItem ? 'sales_order_item_id' : 'proforma_invoice_item_id',
-            'label' => $line instanceof SalesOrderItem ? __('Sales Order') : __('Proforma Invoice'),
-            'no' => $line instanceof SalesOrderItem ? $document->order_no : $document->pi_no,
-            'party' => $document->party,
-            'delivery_date' => $document->delivery_date,
-        ];
     }
 }

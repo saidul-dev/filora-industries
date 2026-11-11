@@ -115,6 +115,12 @@ class SalesOrderSourcingTest extends TestCase
     {
         $order = $this->confirmedOrder();
 
+        // The picker lists Sales Orders alongside PIs; picking one lists its
+        // lines planned for production.
+        $this->actingAs($this->admin)->get(route('production-orders.create'))
+            ->assertOk()->assertSee("so-{$order->id}")->assertSee($order->order_no);
+        $this->actingAs($this->admin)->get(route('production-orders.create', ['source' => "so-{$order->id}"]))
+            ->assertOk()->assertSee($this->zipper->name)->assertSee($this->tape->name);
         $this->actingAs($this->admin)->get(route('production-orders.create', ['sales_order_item_id' => $order->items[0]->id]))
             ->assertOk()->assertSee($order->order_no)->assertSee($this->tape->name);
 
@@ -123,15 +129,83 @@ class SalesOrderSourcingTest extends TestCase
         $production = ProductionOrder::sole();
         $this->assertNull($production->proforma_invoice_id);
         $this->assertSame($order->id, $production->sales_order_id);
-        $this->assertSame($order->items[0]->id, $production->sales_order_item_id);
+        $this->assertSame($order->items[0]->id, $production->items()->sole()->sales_order_item_id);
         $this->assertEquals(700, $this->balance($this->tape, $this->factory)); // 600 × 0.5 consumed
-        $this->assertEquals(400, $order->items[0]->refresh()->load('productionOrders')->quantityToProduce());
+        $this->assertEquals(400, $order->items[0]->refresh()->load('productionItems.productionOrder')->quantityToProduce());
 
-        // Can't produce more than the line still needs.
-        $this->produce($order, 401)->assertSessionHasErrors('quantity');
+        // One live Production Order per line: a second one is refused, and
+        // the order (no other line to produce) drops out of the picker.
+        $this->produce($order, 400)->assertSessionHasErrors('sales_order_item_id');
+        $this->assertSame(1, ProductionOrder::count());
+        $this->actingAs($this->admin)->get(route('production-orders.create'))
+            ->assertOk()->assertDontSee("so-{$order->id}");
+        $this->actingAs($this->admin)->get(route('production-orders.create', ['source' => "so-{$order->id}"]))
+            ->assertOk()->assertSee($production->production_no);
 
         $this->actingAs($this->admin)->get(route('production-orders.show', $production))->assertOk()->assertSee($order->order_no);
         $this->actingAs($this->admin)->get(route('production-orders.index'))->assertOk()->assertSee($order->order_no);
+    }
+
+    public function test_several_order_lines_go_into_one_production_order(): void
+    {
+        $this->actingAs($this->admin)->post(route('sales-orders.store'), [
+            'party_id' => $this->makeCustomer()->id,
+            'order_date' => '2026-11-01',
+            'items' => [
+                ['item' => "product-{$this->zipper->id}", 'quantity' => 400, 'color' => 'Red'],
+                ['item' => "product-{$this->zipper->id}", 'quantity' => 300, 'color' => 'Blue'],
+                ['item' => "product-{$this->label->id}", 'quantity' => 50],
+            ],
+        ])->assertSessionHasNoErrors();
+        $order = SalesOrder::latest('id')->first();
+        $this->actingAs($this->admin)->post(route('sales-orders.confirm', $order));
+        $order->refresh()->load('items');
+        [$red, $blue] = [$order->items[0], $order->items[1]];
+
+        $this->assertSame(2, $order->linesToProduce()->count());
+        $this->actingAs($this->admin)->get(route('sales-orders.show', $order))->assertOk()
+            ->assertSee(route('production-orders.create', ['source' => "so-{$order->id}"]), false);
+
+        // Asking for more than the summed BOM need on hand is refused as a whole.
+        $this->actingAs($this->admin)->post(route('production-orders.store'), [
+            'source' => "so-{$order->id}",
+            'site_id' => $this->factory->id,
+            'items' => [$red->id => 1400, $blue->id => 300],
+        ])->assertSessionHasErrors("items.{$red->id}");
+
+        $this->actingAs($this->admin)->post(route('production-orders.store'), [
+            'source' => "so-{$order->id}",
+            'site_id' => $this->factory->id,
+            'items' => [$red->id => 400, $blue->id => 300],
+        ])->assertSessionHasNoErrors();
+
+        $production = ProductionOrder::with('items')->sole();
+        $this->assertSame($order->id, $production->sales_order_id);
+        $this->assertEqualsCanonicalizing([$red->id, $blue->id], $production->items->pluck('sales_order_item_id')->all());
+        $this->assertEquals(700, $production->totalQuantity());
+        $this->assertEquals(650, $this->balance($this->tape, $this->factory)); // 700 × 0.5 consumed
+        $this->assertEquals(700, (float) $production->material_cost);          // 350 tape × 2
+        $this->assertSame(0, $order->refresh()->linesToProduce()->count());
+
+        // Neither line can go on a second order.
+        $this->actingAs($this->admin)->post(route('production-orders.store'), [
+            'source' => "so-{$order->id}",
+            'site_id' => $this->factory->id,
+            'items' => [$blue->id => 1],
+        ])->assertSessionHasErrors("items.{$blue->id}");
+
+        $this->actingAs($this->admin)->get(route('production-orders.show', $production))->assertOk()
+            ->assertSee('Red')->assertSee('Blue');
+        $this->actingAs($this->admin)->get(route('production-orders.index'))->assertOk()->assertSee('1 more line', false);
+
+        // Completed per line: each line's output carries its own material cost.
+        $items = $production->items->keyBy('sales_order_item_id');
+        $this->actingAs($this->admin)->post(route('production-orders.complete', $production), [
+            'produced' => [$items[$red->id]->id => 400, $items[$blue->id]->id => 250],
+        ])->assertSessionHasNoErrors();
+        $this->assertSame('completed', $production->refresh()->status);
+        $this->assertEquals(650, $this->balance($this->zipper, $this->factory));
+        $this->assertEquals(250, (float) $items[$blue->id]->refresh()->produced_quantity);
     }
 
     public function test_purchase_order_is_raised_straight_from_an_order_without_a_requisition(): void
@@ -185,11 +259,11 @@ class SalesOrderSourcingTest extends TestCase
 
         $this->actingAs($this->admin)->post(route('proforma-invoices.issue', $invoice))->assertSessionHasNoErrors();
 
-        $invoice->refresh()->load('items.productionOrders');
+        $invoice->refresh()->load('items.productionItems.productionOrder');
         $this->assertSame('in_progress', $invoice->status);
         $production = ProductionOrder::sole();
         $this->assertSame($invoice->id, $production->proforma_invoice_id);
-        $this->assertSame($invoice->items->firstWhere('sales_order_item_id', $order->items[0]->id)->id, $production->proforma_invoice_item_id);
+        $this->assertSame($invoice->items->firstWhere('sales_order_item_id', $order->items[0]->id)->id, $production->items()->sole()->proforma_invoice_item_id);
         $this->assertSame($invoice->id, Purchase::sole()->proforma_invoice_id);
 
         // Nothing left to produce, and the 300 labels already bought aren't suggested again.

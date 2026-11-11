@@ -60,7 +60,7 @@
                 <tr class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th class="px-5 py-3 font-semibold">{{ __('Production Order') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Product') }}</th>
-                    <th class="px-5 py-3 font-semibold">{{ __('Proforma Invoice') }}</th>
+                    <th class="px-5 py-3 font-semibold">{{ __('Sales Order / PI') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Site') }}</th>
                     <th class="px-5 py-3 font-semibold text-right">{{ __('Quantity') }}</th>
                     <th class="px-5 py-3 font-semibold">{{ __('Due') }}</th>
@@ -75,16 +75,21 @@
                         <span class="block font-semibold text-slate-800">{{ $order->production_no }}</span>
                         <span class="block text-xs text-slate-400">{{ $order->created_at->format('d M, Y') }}</span>
                     </td>
-                    <td class="px-5 py-3 text-slate-700">{{ $order->label() }}</td>
+                    <td class="px-5 py-3 text-slate-700">
+                        {{ $order->items->first()?->label() ?? '—' }}
+                        @if ($order->items->count() > 1)
+                        <span class="block text-xs text-slate-400">{{ __('+ :count more lines', ['count' => $order->items->count() - 1]) }}</span>
+                        @endif
+                    </td>
                     <td class="px-5 py-3 text-slate-600">
                         {{ $order->sourceNo() }}
                         <span class="block text-xs text-slate-400">{{ $order->buyer()?->name }}</span>
                     </td>
                     <td class="px-5 py-3 text-slate-600">{{ $order->site->name }}</td>
                     <td class="px-5 py-3 text-right font-semibold text-slate-800">
-                        {{ rtrim(rtrim(number_format($order->quantity, 4), '0'), '.') }} {{ $order->product->stockUnit->short_name ?? '' }}
-                        @if ($order->status === 'completed' && (float) $order->produced_quantity !== (float) $order->quantity)
-                            <span class="block text-xs font-normal text-slate-400">{{ __('Produced') }} {{ rtrim(rtrim(number_format($order->produced_quantity, 4), '0'), '.') }}</span>
+                        {{ rtrim(rtrim(number_format($order->totalQuantity(), 4), '0'), '.') }} {{ $order->items->count() === 1 ? ($order->items->first()->product->stockUnit->short_name ?? '') : '' }}
+                        @if ($order->status === 'completed' && $order->totalProduced() !== $order->totalQuantity())
+                            <span class="block text-xs font-normal text-slate-400">{{ __('Produced') }} {{ rtrim(rtrim(number_format($order->totalProduced(), 4), '0'), '.') }}</span>
                         @endif
                     </td>
                     <td class="px-5 py-3 {{ $order->isOpen() && $order->due_date?->isPast() ? 'font-semibold text-rose-600' : 'text-slate-600' }}">{{ $order->due_date?->format('d M, Y') ?? '—' }}</td>
