@@ -168,7 +168,68 @@
         @endif
     </div>
 
-    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+    @php
+        $typeNames = ['manufactured' => 'Manufactured', 'direct_purchase' => 'Direct Purchase', 'raw_material' => 'Raw Material'];
+        $lineFilterRows = $order->items->map(fn ($item) => [
+            'text' => mb_strtolower(implode(' ', array_filter([
+                $item->product->name,
+                $item->productVariant->label ?? null,
+                $item->productVariant->sku ?? $item->product->sku,
+                $item->style,
+            ]))),
+            'type' => $item->product->product_type,
+            'color' => (string) $item->color,
+            'length' => $item->length_per_unit !== null ? rtrim(rtrim(number_format($item->length_per_unit, 2), '0'), '.') : '',
+        ])->values();
+        $filterTypes = $order->items->pluck('product.product_type')->unique()->sort()->values();
+        $filterColors = $lineFilterRows->pluck('color')->filter()->unique()->sort(SORT_NATURAL | SORT_FLAG_CASE)->values();
+        $filterLengths = $lineFilterRows->pluck('length')->filter(fn ($v) => $v !== '')->unique()->sortBy(fn ($v) => (float) $v)->values();
+    @endphp
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden"
+         x-data="{
+            rows: {{ Js::from($lineFilterRows) }},
+            q: '', type: '', color: '', length: '',
+            show(i) {
+                const r = this.rows[i], q = this.q.trim().toLowerCase();
+                return (!q || r.text.includes(q))
+                    && (!this.type || r.type === this.type)
+                    && (!this.color || r.color === this.color)
+                    && (!this.length || r.length === this.length);
+            },
+            get visible() { return this.rows.filter((r, i) => this.show(i)).length; },
+            get active() { return this.q || this.type || this.color || this.length; },
+            reset() { this.q = ''; this.type = ''; this.color = ''; this.length = ''; },
+         }">
+        @if ($order->items->count() > 1)
+        <div class="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
+            <div class="relative min-w-[200px] flex-1">
+                <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
+                <input type="search" x-model="q" placeholder="{{ __('Search product, SKU or style…') }}"
+                       class="w-full rounded-lg border-slate-200 py-2 pl-9 text-sm focus:border-brand-500 focus:ring-brand-500">
+            </div>
+            <select x-model="type" class="rounded-lg border-slate-200 py-2 text-sm focus:border-brand-500 focus:ring-brand-500">
+                <option value="">{{ __('All types') }}</option>
+                @foreach ($filterTypes as $t)
+                <option value="{{ $t }}">{{ __($typeNames[$t] ?? $t) }}</option>
+                @endforeach
+            </select>
+            <select x-model="color" class="rounded-lg border-slate-200 py-2 text-sm focus:border-brand-500 focus:ring-brand-500">
+                <option value="">{{ __('All colors') }}</option>
+                @foreach ($filterColors as $c)
+                <option value="{{ $c }}">{{ $c }}</option>
+                @endforeach
+            </select>
+            <select x-model="length" class="rounded-lg border-slate-200 py-2 text-sm focus:border-brand-500 focus:ring-brand-500">
+                <option value="">{{ __('All lengths') }}</option>
+                @foreach ($filterLengths as $l)
+                <option value="{{ $l }}">{{ $l }} m</option>
+                @endforeach
+            </select>
+            <button type="button" x-show="active" x-cloak @click="reset()"
+                    class="rounded-lg px-3 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">{{ __('Clear') }}</button>
+            <span class="ml-auto text-xs text-slate-400" x-text="`${visible} / ${rows.length} {{ __('lines') }}`"></span>
+        </div>
+        @endif
         <div class="overflow-x-auto">
         <table class="w-full min-w-[1000px] text-sm">
             <thead>
@@ -189,7 +250,7 @@
             </thead>
             <tbody class="divide-y divide-slate-100">
                 @foreach ($order->items as $item)
-                <tr class="hover:bg-slate-50">
+                <tr class="hover:bg-slate-50" x-show="show({{ $loop->index }})">
                     <td class="px-4 py-3 font-semibold text-slate-800">{{ $item->style ?: '—' }}</td>
                     <td class="px-4 py-3">
                         <span class="block font-semibold text-slate-800">{{ $item->product->name }}{{ $item->productVariant ? ' — '.$item->productVariant->label : '' }}</span>
@@ -223,6 +284,12 @@
                     <td class="px-4 py-3 text-slate-600">{{ $item->remarks ?: '' }}</td>
                 </tr>
                 @endforeach
+                <tr x-show="visible === 0" x-cloak>
+                    <td colspan="{{ $anyDelivered ? 10 : 9 }}" class="px-4 py-8 text-center text-sm text-slate-400">
+                        {{ __('No lines match the filter.') }}
+                        <button type="button" @click="reset()" class="ml-1 font-semibold text-brand-700 hover:underline">{{ __('Clear') }}</button>
+                    </td>
+                </tr>
             </tbody>
             <tfoot class="border-t border-slate-200 bg-slate-50">
                 <tr>
